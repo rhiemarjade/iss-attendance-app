@@ -1,0 +1,2129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Attendance">
+
+    <meta name="theme-color" content="#673ab7">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Attendance">
+    <meta name="format-detection" content="telephone=no">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+    <title>Offline Attendance</title>
+    <style>
+        :root {
+            --primary: #673ab7;
+            --primary-dark: #512da8;
+            --green: #4caf50;
+            --red: #f44336;
+            --blue: #2196f3;
+            --gray: #9e9e9e;
+            --dark-gray: #607d8b;
+            --bg: #f4f4f9;
+            --card: #ffffff;
+            --border: #dddddd;
+            --text: #333333;
+            --muted: #666666;
+            --control-height: 46px;
+            --control-radius: 8px;
+            --control-padding-x: 14px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            padding: 20px;
+            background: var(--bg);
+            user-select: none;
+            margin: 0;
+            color: var(--text);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--card);
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .clock { font-size: 18px; font-weight: bold; color: var(--text); }
+
+        .tab-nav { display: flex; gap: 10px; flex-wrap: wrap; }
+        .tab-btn {
+            min-height: var(--control-height);
+            padding: 0 18px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            border-radius: var(--control-radius);
+            background: #e0e0e0;
+            color: #555;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1.15;
+        }
+        .tab-btn.active { background: var(--primary); color: white; }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+            padding: 12px;
+            background: var(--card);
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            align-items: center;
+        }
+
+        .toolbar .field-group {
+            align-self: stretch;
+        }
+
+        .panel {
+            background: var(--card);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .panel h2, .panel h3 { margin-top: 0; }
+        .panel p { color: var(--muted); line-height: 1.45; }
+
+        label.small-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: bold;
+            color: #777;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 150px;
+        }
+
+        .toolbar-spacer {
+            flex: 1 1 auto;
+            min-width: 20px;
+        }
+
+        .toolbar-action {
+            margin-left: auto;
+            align-self: flex-end;
+            white-space: nowrap;
+        }
+
+        select, button, input {
+            font-family: inherit;
+            font-size: 16px;
+            border-radius: var(--control-radius);
+            border: 1px solid #ccc;
+            line-height: 1.15;
+            box-sizing: border-box;
+        }
+
+        select,
+        input[type="text"],
+        input[type="date"],
+        input[type="search"],
+        input[type="number"],
+        button {
+            min-height: var(--control-height);
+            height: var(--control-height);
+            padding: 0 var(--control-padding-x);
+        }
+
+        select {
+            -webkit-appearance: none;
+            appearance: none;
+            background-color: #fff;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20'%3E%3Cpath fill='%23555' d='M5.5 7.5L10 12l4.5-4.5H5.5z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 14px 14px;
+            padding-right: 38px;
+            color: var(--text);
+        }
+
+        input[type="date"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: #fff;
+            color: var(--text);
+            text-align: center;
+        }
+
+        input[type="date"]::-webkit-date-and-time-value {
+            text-align: center;
+            min-height: var(--control-height);
+            line-height: var(--control-height);
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            margin: 0;
+        }
+
+        input[type="file"] {
+            max-width: 100%;
+            min-height: var(--control-height);
+            padding: 9px 12px;
+            background: #fff;
+        }
+        input[type="checkbox"], input[type="radio"] { padding: 0; min-height: auto; height: auto; }
+
+        button { cursor: pointer; border: none; font-weight: bold; display: inline-flex; align-items: center; justify-content: center; }
+        button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-green { background: var(--green); color: white; }
+        .btn-red { background: #d32f2f; color: white; }
+        .btn-blue { background: var(--blue); color: white; }
+        .btn-gray { background: #e0e0e0; color: #333; }
+        .btn-dark { background: var(--dark-gray); color: white; }
+        .btn-clear { background: none; border: none; font-size: 24px; padding: 0; width: var(--control-height); min-width: var(--control-height); }
+
+        .mode-present { background: var(--green); color: white; }
+        .mode-absent { background: var(--red); color: white; }
+        .mode-late { background: var(--blue); color: white; }
+        .mode-excused { background: var(--gray); color: white; }
+        .mode-edit { background: var(--dark-gray); color: white; }
+        .mode-active { outline: 3px solid #333; outline-offset: 2px; }
+        .btn-save { background: var(--primary); color: white; transition: background 0.3s ease; }
+        .btn-unsaved { background: var(--red) !important; }
+
+        .lock-bar {
+            background: #eef3ff;
+            border: 1px solid #90caf9;
+            color: #0d47a1;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .lock-text {
+            font-weight: bold;
+            line-height: 1.35;
+            flex: 1 1 auto;
+        }
+
+        .card.locked {
+            cursor: default;
+        }
+
+        .card.locked:hover {
+            transform: none;
+        }
+
+        .status-bar {
+            background: #e8f5e9;
+            border: 1px solid var(--green);
+        }
+
+        .status-text {
+            font-weight: bold;
+            color: #2e7d32;
+            flex-grow: 1;
+        }
+
+        .warning-bar {
+            background: #fff8e1;
+            border: 1px solid #fbc02d;
+            color: #6d4c00;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+            gap: 10px;
+        }
+
+        .card {
+            background: white;
+            padding: 13px 8px;
+            text-align: center;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            cursor: pointer;
+            border: 2px solid transparent;
+            font-size: 14px;
+            min-height: 78px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .card-name { font-weight: bold; line-height: 1.25; }
+        .card-lrn { font-size: 11px; color: #777; }
+        .card-status { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+
+        .status-Unmarked { background: #ffffff; border-color: #e0e0e0; }
+        .status-Present { background: #e8f5e9; border-color: var(--green); }
+        .status-Absent { background: #ffebee; border-color: var(--red); }
+        .status-Late { background: #e3f2fd; border-color: var(--blue); }
+        .status-Excused { background: #f5f5f5; border-color: var(--gray); }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            width: 380px;
+            max-width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.18);
+        }
+
+        .modal-content input, .modal-content select {
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: var(--control-radius);
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        th, td {
+            border: 1px solid var(--border);
+            padding: 8px;
+            white-space: nowrap;
+        }
+
+        th { background-color: var(--bg); font-weight: bold; }
+        .col-name { text-align: left; position: sticky; left: 0; background: white; z-index: 1; font-weight: bold; }
+        th.col-name { background: var(--bg); }
+        .cell-P { color: var(--green); font-weight: bold; }
+        .cell-A { color: var(--red); font-weight: bold; }
+        .cell-L { color: var(--blue); font-weight: bold; }
+        .cell-E { color: var(--gray); font-weight: bold; }
+        .cell-U { color: #777; }
+
+        #individualSummary {
+            display: none;
+            background: white;
+            padding: 18px;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+            justify-content: space-around;
+            align-items: center;
+            font-size: 18px;
+            font-weight: bold;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .summary-item { display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+        .summary-label { font-size: 12px; text-transform: uppercase; color: #777; margin-bottom: 5px; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .stat-card {
+            background: #fafafa;
+            border: 1px solid #eeeeee;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .stat-label { font-size: 12px; color: #777; text-transform: uppercase; font-weight: bold; }
+        .stat-value { font-size: 24px; color: var(--primary); font-weight: bold; margin-top: 5px; }
+
+        .note-box {
+            background: #f7f3ff;
+            border: 1px solid #d1c4e9;
+            color: #4527a0;
+            padding: 12px;
+            border-radius: 8px;
+            line-height: 1.45;
+        }
+
+        .import-result {
+            white-space: pre-wrap;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 13px;
+            background: #fafafa;
+            border: 1px solid #eee;
+            padding: 12px;
+            border-radius: 8px;
+            max-height: 220px;
+            overflow: auto;
+            display: none;
+        }
+
+
+
+        .report-toolbar {
+            align-items: flex-end;
+            gap: 12px;
+        }
+
+        .report-toolbar .field-group {
+            align-self: auto;
+        }
+
+        .report-mode-group {
+            min-width: 300px;
+        }
+
+        .mode-toggle {
+            min-height: var(--control-height);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .mode-toggle label {
+            min-height: var(--control-height);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .report-select-field {
+            min-width: 145px;
+        }
+
+        .report-month-field {
+            min-width: 170px;
+        }
+
+        .date-range-group {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            flex-wrap: nowrap;
+        }
+
+        .report-date-field {
+            min-width: 155px;
+        }
+
+        .report-date-field input[type="date"] {
+            width: 100%;
+        }
+
+        .report-student-field {
+            min-width: 360px;
+            flex: 1 1 360px;
+        }
+
+        .report-student-field select {
+            width: 100%;
+        }
+
+        .report-export-button {
+            align-self: flex-end;
+            white-space: nowrap;
+        }
+
+
+        .pwa-update-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: #fff3cd;
+            border: 1px solid #ffecb5;
+            color: #5f4700;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            font-weight: bold;
+        }
+
+        .pwa-update-banner button {
+            background: var(--primary);
+            color: white;
+            white-space: nowrap;
+        }
+
+        @media (display-mode: standalone) {
+            body {
+                padding-top: max(20px, env(safe-area-inset-top));
+                padding-left: max(20px, env(safe-area-inset-left));
+                padding-right: max(20px, env(safe-area-inset-right));
+                padding-bottom: max(20px, env(safe-area-inset-bottom));
+            }
+        }
+
+        @media (max-width: 720px) {
+            body { padding: 12px; }
+            .header { align-items: stretch; }
+            .tab-nav { width: 100%; }
+            .tab-btn { flex: 1; min-width: 110px; }
+            .field-group { width: 100%; }
+            .toolbar-spacer { display: none; }
+            .toolbar-action { width: 100%; margin-left: 0; }
+            .toolbar > button, .toolbar select, .toolbar input[type="date"] { width: 100%; }
+            .date-range-group { width: 100%; flex-direction: column; align-items: stretch; }
+            .report-mode-group, .report-select-field, .report-month-field, .report-date-field, .report-student-field { width: 100%; min-width: 0; flex-basis: auto; }
+            .mode-toggle { width: 100%; }
+            .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="tab-nav">
+            <button class="tab-btn active" id="btnTabAttendance" onclick="switchTab('attendance')">Daily Record</button>
+            <button class="tab-btn" id="btnTabReports" onclick="switchTab('reports')">Reports</button>
+            <button class="tab-btn" id="btnTabDatabase" onclick="switchTab('database')">Database</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+            <div class="clock" id="liveClock">Loading time...</div>
+            <button onclick="resetToToday()" class="btn-clear" title="Reset View to Today">🔄</button>
+        </div>
+    </div>
+
+    <div class="pwa-update-banner" id="pwaUpdateBanner" role="status" aria-live="polite">
+        <span id="pwaUpdateText">A new app version is available.</span>
+        <button type="button" id="pwaUpdateButton">Refresh App</button>
+    </div>
+
+    <div id="view-attendance">
+        <div class="toolbar" id="attendanceFilters">
+            <div class="field-group">
+                <label class="small-label" for="attendanceDate">Date</label>
+                <input type="date" id="attendanceDate" onchange="onDailyContextChange('date')">
+            </div>
+            <div class="field-group">
+                <label class="small-label" for="gradeSelect">Grade Level</label>
+                <select id="gradeSelect" onchange="onDailyContextChange('grade')"></select>
+            </div>
+            <div class="field-group">
+                <label class="small-label" for="sectionSelect">Section</label>
+                <select id="sectionSelect" onchange="onDailyContextChange('section')"></select>
+            </div>
+            <div class="field-group">
+                <label class="small-label" for="subjectSelect">Subject</label>
+                <select id="subjectSelect" onchange="onDailyContextChange('subject')"></select>
+            </div>
+            <div class="toolbar-spacer" aria-hidden="true"></div>
+            <button class="btn-blue toolbar-action" onclick="openAddRosterModal()">+ Add Roster Entry</button>
+        </div>
+
+        <div class="toolbar warning-bar" id="rosterSummaryBar" style="display: none;">
+            <span id="rosterSummaryText">Select a grade, section, and subject.</span>
+        </div>
+
+        <div class="toolbar lock-bar" id="attendanceLockBar" style="display: none;">
+            <span class="lock-text" id="attendanceLockText">Saved attendance record is locked for safety.</span>
+            <button class="btn-dark" onclick="unlockAttendanceRecord()">Unlock Editing</button>
+        </div>
+
+        <div class="toolbar" id="paintbrushTools">
+            <strong>Paintbrush:</strong>
+            <button class="mode-absent mode-active" onclick="setMode('Absent')" id="btn-Absent">Absent</button>
+            <button class="mode-late" onclick="setMode('Late')" id="btn-Late">Late</button>
+            <button class="mode-excused" onclick="setMode('Excused')" id="btn-Excused">Excused</button>
+            <button class="mode-present" onclick="setMode('Present')" id="btn-Present">Present</button>
+            <button class="mode-edit" onclick="setMode('Edit')" id="btn-Edit">Edit Student</button>
+            <div style="margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn-green" onclick="markAllVisible('Present')">Mark All Present</button>
+                <button class="btn-red" onclick="markAllVisible('Absent')">Mark All Absent</button>
+                <button class="btn-gray" onclick="clearVisibleDraft()">Clear Draft</button>
+                <button class="btn-save" id="btn-SaveRecord" onclick="saveDailyRecord()">Save Record</button>
+            </div>
+        </div>
+
+        <div class="grid" id="studentGrid"></div>
+    </div>
+
+    <div id="view-reports" style="display: none;">
+        <div class="toolbar report-toolbar">
+            <div class="field-group report-mode-group">
+                <label class="small-label">Report Type</label>
+                <div class="mode-toggle" role="radiogroup" aria-label="Report Type">
+                    <label>
+                        <input type="radio" name="reportMode" id="modeMonthly" checked onchange="toggleReportMode()"> Monthly
+                    </label>
+                    <label>
+                        <input type="radio" name="reportMode" id="modeCustom" onchange="toggleReportMode()"> Custom
+                    </label>
+                    <label>
+                        <input type="radio" name="reportMode" id="modeIndividual" onchange="toggleReportMode()"> Individual
+                    </label>
+                </div>
+            </div>
+
+            <div class="field-group report-select-field">
+                <label class="small-label" for="reportGradeSelect">Grade Level</label>
+                <select id="reportGradeSelect" onchange="onReportFilterChange('grade')"></select>
+            </div>
+            <div class="field-group report-select-field">
+                <label class="small-label" for="reportSectionSelect">Section</label>
+                <select id="reportSectionSelect" onchange="onReportFilterChange('section')"></select>
+            </div>
+            <div class="field-group report-select-field">
+                <label class="small-label" for="reportSubjectSelect">Subject</label>
+                <select id="reportSubjectSelect" onchange="onReportFilterChange('subject')"></select>
+            </div>
+
+            <div class="field-group report-month-field" id="reportMonthGroup">
+                <label class="small-label" for="reportMonthSelect">Month</label>
+                <select id="reportMonthSelect" onchange="generateReport()">
+                    <option value="">Select Month</option>
+                </select>
+            </div>
+
+            <div class="date-range-group" id="customDateContainer" style="display: none;">
+                <div class="field-group report-date-field">
+                    <label class="small-label" for="reportStartDate">From</label>
+                    <input type="date" id="reportStartDate" onchange="generateReport()">
+                </div>
+                <div class="field-group report-date-field">
+                    <label class="small-label" for="reportEndDate">To</label>
+                    <input type="date" id="reportEndDate" onchange="generateReport()">
+                </div>
+            </div>
+
+            <div class="field-group report-student-field" id="reportStudentGroup" style="display: none;">
+                <label class="small-label" for="reportStudentSelect">Student</label>
+                <select id="reportStudentSelect" onchange="generateReport()">
+                    <option value="">Select Student</option>
+                </select>
+            </div>
+
+            <div class="toolbar-spacer" aria-hidden="true"></div>
+            <button class="btn-green report-export-button" onclick="exportReportCSV()">Export CSV</button>
+        </div>
+
+        <div id="individualSummary"></div>
+
+        <div class="table-container">
+            <table id="reportTable"></table>
+        </div>
+    </div>
+
+    <div id="view-database" style="display: none;">
+        <div class="panel">
+            <h2>Roster Database</h2>
+            <p>Import a clean ISS export with these columns: <strong>LRN, Complete Name, Gender, Grade Level, Section, Subject</strong>. The app uses LRN as the student identity and treats Grade Level + Section + Subject as the class roster.</p>
+            <div class="stats-grid" id="databaseStats"></div>
+            <div class="note-box">
+                Attendance is saved by Date + Grade Level + Section + Subject + LRN. This prevents Mathematics attendance from overwriting Science or English attendance for the same section.
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Import from ISS CSV</h2>
+            <p>The import merges new students and roster memberships. Existing attendance records are kept.</p>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button class="btn-gray" onclick="downloadTemplate()">Get Template</button>
+                <input type="file" id="csvUpload" accept=".csv,text/csv">
+                <button class="btn-blue" onclick="exportRosterCSV()">Export Current Roster CSV</button>
+            </div>
+            <div id="importResult" class="import-result"></div>
+        </div>
+
+        <div class="panel">
+            <h2>Backup and Restore</h2>
+            <p>Use this before moving to another browser, computer, or tablet. The backup includes students, rosters, and attendance records. This tablet version stores records on this device, so backup regularly.</p>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button class="btn-green" onclick="backupDatabase()">Backup Database JSON</button>
+                <input type="file" id="restoreUpload" accept=".json,application/json">
+                <button class="btn-red" onclick="clearDatabase()">Delete Database</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Roster Preview</h2>
+            <div class="toolbar" style="box-shadow: none; padding-left: 0; padding-right: 0;">
+                <div class="field-group">
+                    <label class="small-label" for="previewGradeSelect">Grade Level</label>
+                    <select id="previewGradeSelect" onchange="updatePreviewFilters('grade')"></select>
+                </div>
+                <div class="field-group">
+                    <label class="small-label" for="previewSectionSelect">Section</label>
+                    <select id="previewSectionSelect" onchange="updatePreviewFilters('section')"></select>
+                </div>
+                <div class="field-group">
+                    <label class="small-label" for="previewSubjectSelect">Subject</label>
+                    <select id="previewSubjectSelect" onchange="renderRosterPreview()"></select>
+                </div>
+            </div>
+            <div class="table-container" style="box-shadow: none; padding: 0;">
+                <table id="previewTable"></table>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="addRosterModal">
+        <div class="modal-content">
+            <h3 style="margin: 0; color: #333;">Add Roster Entry</h3>
+            <label class="small-label">LRN</label>
+            <input type="text" id="newStudentLRN" placeholder="12-digit LRN">
+            <label class="small-label">Complete Name</label>
+            <input type="text" id="newStudentName" placeholder="LAST NAME, FIRST NAME">
+            <label class="small-label">Gender</label>
+            <select id="newStudentGender">
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+            </select>
+            <label class="small-label">Grade Level</label>
+            <input type="text" id="newStudentGrade" placeholder="Example: 9">
+            <label class="small-label">Section</label>
+            <input type="text" id="newStudentSection" placeholder="Example: JUPITER">
+            <label class="small-label">Subject</label>
+            <input type="text" id="newStudentSubject" placeholder="Example: Mathematics">
+            <div class="modal-buttons">
+                <button class="btn-gray" onclick="closeAddRosterModal()">Cancel</button>
+                <button class="btn-green" onclick="saveNewRosterEntry()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="editStudentModal">
+        <div class="modal-content">
+            <h3 style="margin: 0; color: #333;">Edit Student</h3>
+            <label class="small-label">LRN</label>
+            <input type="text" id="editStudentLRN" disabled>
+            <label class="small-label">Complete Name</label>
+            <input type="text" id="editStudentName">
+            <label class="small-label">Gender</label>
+            <select id="editStudentGender">
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+            </select>
+            <div class="modal-buttons">
+                <button class="btn-gray" onclick="closeEditStudentModal()">Cancel</button>
+                <button class="btn-primary" onclick="confirmEditStudent()">Update Info</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DB_KEY = 'offlineAttendanceV2Database';
+        const LEGACY_KEYS = ['savedStudentRoster', 'sectionSchedule'];
+        const STATUS_VALUES = ['Unmarked', 'Present', 'Absent', 'Late', 'Excused'];
+
+        let db = createEmptyDatabase();
+        let currentMode = 'Absent';
+        let hasUnsavedChanges = false;
+        let currentContext = null;
+        let draftAttendance = {};
+        let editingLRN = '';
+        let savedRecordExists = false;
+        let attendanceLocked = false;
+        let unlockedRecordContextKey = '';
+
+        function createEmptyDatabase() {
+            return {
+                version: 2,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                students: {},
+                rosters: [],
+                attendance: {}
+            };
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
+            const dateStr = now.toLocaleDateString(undefined, options);
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('liveClock').innerText = `${dateStr} | ${timeStr}`;
+        }
+
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function loadDatabase() {
+            const saved = localStorage.getItem(DB_KEY);
+            if (!saved) {
+                db = createEmptyDatabase();
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(saved);
+                db = normalizeDatabase(parsed);
+            } catch (err) {
+                alert('The saved database could not be read. A new empty database will be started. Your browser may still contain the old corrupted data.');
+                db = createEmptyDatabase();
+            }
+        }
+
+        function normalizeDatabase(input) {
+            const clean = createEmptyDatabase();
+            clean.version = 2;
+            clean.createdAt = input.createdAt || new Date().toISOString();
+            clean.updatedAt = input.updatedAt || new Date().toISOString();
+            clean.students = input.students && typeof input.students === 'object' ? input.students : {};
+            clean.rosters = Array.isArray(input.rosters) ? input.rosters : [];
+            clean.attendance = input.attendance && typeof input.attendance === 'object' ? input.attendance : {};
+
+            const normalizedStudents = {};
+            Object.keys(clean.students).forEach(lrn => {
+                const s = clean.students[lrn];
+                const cleanLRN = normalizeLRN(s.lrn || lrn);
+                if (!cleanLRN) return;
+                normalizedStudents[cleanLRN] = {
+                    lrn: cleanLRN,
+                    name: normalizeName(s.name || s.completeName || ''),
+                    gender: normalizeGender(s.gender),
+                    updatedAt: s.updatedAt || clean.updatedAt
+                };
+            });
+            clean.students = normalizedStudents;
+
+            const rosterMap = new Map();
+            clean.rosters.forEach(r => {
+                const lrn = normalizeLRN(r.lrn);
+                const gradeLevel = normalizeText(r.gradeLevel || r.grade || r['Grade Level']);
+                const section = normalizeText(r.section || r.Section);
+                const subject = normalizeText(r.subject || r.Subject);
+                if (!lrn || !gradeLevel || !section || !subject) return;
+                const key = rosterKey(lrn, gradeLevel, section, subject);
+                rosterMap.set(key, { lrn, gradeLevel, section, subject });
+            });
+            clean.rosters = Array.from(rosterMap.values());
+
+            return clean;
+        }
+
+        function saveDatabase() {
+            db.updatedAt = new Date().toISOString();
+            localStorage.setItem(DB_KEY, JSON.stringify(db));
+            refreshAllUI();
+        }
+
+        function normalizeText(value) {
+            return String(value ?? '').trim().replace(/\s+/g, ' ');
+        }
+
+        function normalizeName(value) {
+            return normalizeText(value).toUpperCase();
+        }
+
+        function normalizeLRN(value) {
+            let text = String(value ?? '').trim();
+            text = text.replace(/^="(.*)"$/, '$1');
+            text = text.replace(/^'(.*)$/, '$1');
+            text = text.replace(/\.0$/, '');
+            return text.trim();
+        }
+
+        function normalizeGender(input) {
+            if (!input) return 'Female';
+            const val = String(input).trim().toUpperCase();
+            if (['M', 'MALE', 'B', 'BOY', 'BOYS'].includes(val)) return 'Male';
+            if (['F', 'FEMALE', 'G', 'GIRL', 'GIRLS'].includes(val)) return 'Female';
+            return 'Female';
+        }
+
+        function displayStudentName(student) {
+            return student && student.name ? student.name : 'Unnamed Student';
+        }
+
+        function sortStudentObjects(studentArray) {
+            return studentArray.sort((a, b) => {
+                const genderA = a.gender || 'Female';
+                const genderB = b.gender || 'Female';
+                if (genderA !== genderB) return genderA === 'Male' ? -1 : 1;
+                return displayStudentName(a).localeCompare(displayStudentName(b));
+            });
+        }
+
+        function rosterKey(lrn, gradeLevel, section, subject) {
+            return [lrn, gradeLevel, section, subject].map(encodeURIComponent).join('|');
+        }
+
+        function attendanceKey(date, gradeLevel, section, subject, lrn) {
+            return [date, gradeLevel, section, subject, lrn].map(encodeURIComponent).join('|');
+        }
+
+        function attendanceContextKey(ctx) {
+            if (!ctx || !ctx.date || !ctx.gradeLevel || !ctx.section || !ctx.subject) return '';
+            return [ctx.date, ctx.gradeLevel, ctx.section, ctx.subject].map(encodeURIComponent).join('|');
+        }
+
+        function hasSavedRecordForContext(ctx) {
+            if (!attendanceContextKey(ctx)) return false;
+            return Object.values(db.attendance).some(record =>
+                record &&
+                record.date === ctx.date &&
+                record.gradeLevel === ctx.gradeLevel &&
+                record.section === ctx.section &&
+                record.subject === ctx.subject
+            );
+        }
+
+        function refreshAttendanceLockState() {
+            const ctx = getSelectedContext();
+            const ctxKey = attendanceContextKey(ctx);
+            savedRecordExists = hasSavedRecordForContext(ctx);
+
+            if (!ctxKey || !savedRecordExists) {
+                attendanceLocked = false;
+                unlockedRecordContextKey = '';
+            } else {
+                attendanceLocked = unlockedRecordContextKey !== ctxKey;
+            }
+
+            updateAttendanceLockUI();
+        }
+
+        function updateAttendanceLockUI() {
+            const lockBar = document.getElementById('attendanceLockBar');
+            const lockText = document.getElementById('attendanceLockText');
+            const tools = document.getElementById('paintbrushTools');
+            const ctx = getSelectedContext();
+
+            if (!lockBar || !tools) return;
+
+            if (attendanceLocked) {
+                tools.style.display = 'none';
+                lockBar.style.display = 'flex';
+                if (lockText) {
+                    lockText.textContent = `Saved record found for ${ctx.gradeLevel} ${ctx.section}, ${ctx.subject}, ${formatLongDate(ctx.date)}. Editing is locked to prevent accidental changes.`;
+                }
+            } else {
+                lockBar.style.display = 'none';
+                tools.style.display = 'flex';
+            }
+        }
+
+        function unlockAttendanceRecord() {
+            const ctx = getSelectedContext();
+            const ctxKey = attendanceContextKey(ctx);
+            if (!ctxKey || !savedRecordExists) return;
+
+            if (!confirm('This attendance record is already saved. Unlock it for editing?')) return;
+            unlockedRecordContextKey = ctxKey;
+            attendanceLocked = false;
+            updateAttendanceLockUI();
+            renderCards();
+            updateRosterSummary();
+        }
+
+        function guardLockedAttendanceAction() {
+            refreshAttendanceLockState();
+            if (!attendanceLocked) return true;
+            alert('This saved attendance record is locked. Click Unlock Editing before making changes.');
+            return false;
+        }
+
+        function sameRosterContext(r, gradeLevel, section, subject) {
+            return r.gradeLevel === gradeLevel && r.section === section && r.subject === subject;
+        }
+
+        function getTodayString() {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        function initializeDateInput() {
+            document.getElementById('attendanceDate').value = getTodayString();
+        }
+
+        function setUnsavedChanges(status) {
+            hasUnsavedChanges = status;
+            const btnSave = document.getElementById('btn-SaveRecord');
+            if (status) {
+                btnSave.classList.add('btn-unsaved');
+                btnSave.innerText = 'Save Required';
+            } else {
+                btnSave.classList.remove('btn-unsaved');
+                btnSave.innerText = 'Save Record';
+            }
+        }
+
+        function confirmDiscardIfNeeded() {
+            if (!hasUnsavedChanges) return true;
+            return confirm('You have unsaved attendance marks. Continue without saving them?');
+        }
+
+        function getUniqueGrades() {
+            return Array.from(new Set(db.rosters.map(r => r.gradeLevel))).sort((a, b) => gradeSortValue(a) - gradeSortValue(b) || a.localeCompare(b));
+        }
+
+        function getSectionsForGrade(gradeLevel) {
+            return Array.from(new Set(db.rosters.filter(r => !gradeLevel || r.gradeLevel === gradeLevel).map(r => r.section))).sort();
+        }
+
+        function getSubjectsForGradeSection(gradeLevel, section) {
+            return Array.from(new Set(db.rosters.filter(r => (!gradeLevel || r.gradeLevel === gradeLevel) && (!section || r.section === section)).map(r => r.subject))).sort();
+        }
+
+        function gradeSortValue(value) {
+            const match = String(value).match(/\d+/);
+            return match ? parseInt(match[0], 10) : 999;
+        }
+
+        function fillSelect(select, options, placeholder, previousValue) {
+            select.innerHTML = '';
+            select.appendChild(new Option(placeholder, ''));
+            options.forEach(opt => select.appendChild(new Option(opt, opt)));
+            if (previousValue && options.includes(previousValue)) select.value = previousValue;
+            else if (options.length > 0) select.value = options[0];
+            else select.value = '';
+        }
+
+        function populateDailyFilters(preserve = {}) {
+            const gradeSelect = document.getElementById('gradeSelect');
+            const sectionSelect = document.getElementById('sectionSelect');
+            const subjectSelect = document.getElementById('subjectSelect');
+
+            fillSelect(gradeSelect, getUniqueGrades(), 'Select Grade', preserve.gradeLevel || gradeSelect.value);
+            fillSelect(sectionSelect, getSectionsForGrade(gradeSelect.value), 'Select Section', preserve.section || sectionSelect.value);
+            fillSelect(subjectSelect, getSubjectsForGradeSection(gradeSelect.value, sectionSelect.value), 'Select Subject', preserve.subject || subjectSelect.value);
+        }
+
+        function getSelectedContext() {
+            return {
+                date: document.getElementById('attendanceDate').value,
+                gradeLevel: document.getElementById('gradeSelect').value,
+                section: document.getElementById('sectionSelect').value,
+                subject: document.getElementById('subjectSelect').value
+            };
+        }
+
+        function applyContextToControls(context) {
+            if (!context) return;
+            document.getElementById('attendanceDate').value = context.date || getTodayString();
+            populateDailyFilters(context);
+        }
+
+        function onDailyContextChange(level) {
+            if (!confirmDiscardIfNeeded()) {
+                applyContextToControls(currentContext);
+                return;
+            }
+
+            if (level === 'grade') {
+                const grade = document.getElementById('gradeSelect').value;
+                fillSelect(document.getElementById('sectionSelect'), getSectionsForGrade(grade), 'Select Section', '');
+                fillSelect(document.getElementById('subjectSelect'), getSubjectsForGradeSection(grade, document.getElementById('sectionSelect').value), 'Select Subject', '');
+            }
+
+            if (level === 'section') {
+                const grade = document.getElementById('gradeSelect').value;
+                const section = document.getElementById('sectionSelect').value;
+                fillSelect(document.getElementById('subjectSelect'), getSubjectsForGradeSection(grade, section), 'Select Subject', '');
+            }
+
+            setUnsavedChanges(false);
+            draftAttendance = {};
+            unlockedRecordContextKey = '';
+            refreshAttendanceLockState();
+            renderCards();
+            updateRosterSummary();
+            currentContext = getSelectedContext();
+        }
+
+        function getCurrentRosterStudents() {
+            const ctx = getSelectedContext();
+            if (!ctx.gradeLevel || !ctx.section || !ctx.subject) return [];
+            const lrns = db.rosters
+                .filter(r => sameRosterContext(r, ctx.gradeLevel, ctx.section, ctx.subject))
+                .map(r => r.lrn);
+            const uniqueLRNs = Array.from(new Set(lrns));
+            const studentObjects = uniqueLRNs.map(lrn => db.students[lrn]).filter(Boolean);
+            return sortStudentObjects(studentObjects);
+        }
+
+        function getSavedStatus(ctx, lrn) {
+            const key = attendanceKey(ctx.date, ctx.gradeLevel, ctx.section, ctx.subject, lrn);
+            const record = db.attendance[key];
+            return record ? record.status : 'Unmarked';
+        }
+
+        function getDraftOrSavedStatus(ctx, lrn) {
+            if (Object.prototype.hasOwnProperty.call(draftAttendance, lrn)) return draftAttendance[lrn];
+            return getSavedStatus(ctx, lrn);
+        }
+
+        function renderCards() {
+            const grid = document.getElementById('studentGrid');
+            grid.innerHTML = '';
+            const ctx = getSelectedContext();
+            refreshAttendanceLockState();
+
+            if (!ctx.date || !ctx.gradeLevel || !ctx.section || !ctx.subject) {
+                const empty = document.createElement('div');
+                empty.className = 'panel';
+                empty.style.gridColumn = '1 / -1';
+                empty.innerHTML = '<strong>Select a date, grade level, section, and subject to show the roster.</strong>';
+                grid.appendChild(empty);
+                return;
+            }
+
+            const rosterStudents = getCurrentRosterStudents();
+            if (rosterStudents.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'panel';
+                empty.style.gridColumn = '1 / -1';
+                empty.innerHTML = '<strong>No students found for this roster.</strong><br>Import a CSV or add a roster entry.';
+                grid.appendChild(empty);
+                return;
+            }
+
+            rosterStudents.forEach(student => {
+                const status = getDraftOrSavedStatus(ctx, student.lrn);
+                const card = document.createElement('div');
+                card.className = `card status-${status}`;
+
+                const name = document.createElement('div');
+                name.className = 'card-name';
+                name.textContent = displayStudentName(student);
+
+                const lrn = document.createElement('div');
+                lrn.className = 'card-lrn';
+                lrn.textContent = `LRN: ${student.lrn}`;
+
+                const statusText = document.createElement('div');
+                statusText.className = 'card-status';
+                statusText.textContent = status;
+
+                card.appendChild(name);
+                card.appendChild(lrn);
+                card.appendChild(statusText);
+
+                if (attendanceLocked) {
+                    card.classList.add('locked');
+                    card.title = 'Saved record is locked. Click Unlock Editing to make changes.';
+                } else {
+                    card.onclick = () => {
+                        if (!guardLockedAttendanceAction()) return;
+                        if (currentMode === 'Edit') {
+                            openEditStudentModal(student.lrn);
+                        } else {
+                            draftAttendance[student.lrn] = currentMode;
+                            setUnsavedChanges(true);
+                            renderCards();
+                            updateRosterSummary();
+                        }
+                    };
+                }
+
+                grid.appendChild(card);
+            });
+        }
+
+        function updateRosterSummary() {
+            const bar = document.getElementById('rosterSummaryBar');
+            const text = document.getElementById('rosterSummaryText');
+            const ctx = getSelectedContext();
+            const students = getCurrentRosterStudents();
+
+            if (!ctx.gradeLevel || !ctx.section || !ctx.subject) {
+                bar.style.display = 'flex';
+                text.textContent = 'Select a grade, section, and subject.';
+                return;
+            }
+
+            const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0 };
+            let males = 0;
+            let females = 0;
+
+            students.forEach(student => {
+                if ((student.gender || 'Female') === 'Male') males++;
+                else females++;
+                const status = getDraftOrSavedStatus(ctx, student.lrn);
+                counts[status] = (counts[status] || 0) + 1;
+            });
+
+            bar.style.display = 'flex';
+            text.textContent = `${ctx.gradeLevel} ${ctx.section} | ${ctx.subject} | Male: ${males} | Female: ${females} | Total: ${students.length} | P: ${counts.Present} | A: ${counts.Absent} | L: ${counts.Late} | E: ${counts.Excused} | Unmarked: ${counts.Unmarked}`;
+        }
+
+        function setMode(mode) {
+            if (attendanceLocked) return;
+            currentMode = mode;
+            document.querySelectorAll('#paintbrushTools button').forEach(btn => btn.classList.remove('mode-active'));
+            const target = document.getElementById('btn-' + mode);
+            if (target) target.classList.add('mode-active');
+        }
+
+        function markAllVisible(status) {
+            if (!guardLockedAttendanceAction()) return;
+            const rosterStudents = getCurrentRosterStudents();
+            if (rosterStudents.length === 0) {
+                alert('Please select a roster with students first.');
+                return;
+            }
+            rosterStudents.forEach(student => {
+                draftAttendance[student.lrn] = status;
+            });
+            setUnsavedChanges(true);
+            renderCards();
+            updateRosterSummary();
+        }
+
+        function clearVisibleDraft() {
+            if (!guardLockedAttendanceAction()) return;
+            const rosterStudents = getCurrentRosterStudents();
+            if (rosterStudents.length === 0) return;
+            if (!confirm('Clear the unsaved marks on the visible roster? Saved records will remain unchanged until you save again.')) return;
+            rosterStudents.forEach(student => {
+                draftAttendance[student.lrn] = 'Unmarked';
+            });
+            setUnsavedChanges(true);
+            renderCards();
+            updateRosterSummary();
+        }
+
+        function saveDailyRecord() {
+            if (!guardLockedAttendanceAction()) return;
+            const ctx = getSelectedContext();
+            if (!ctx.date || !ctx.gradeLevel || !ctx.section || !ctx.subject) {
+                alert('Please select a valid date, grade level, section, and subject.');
+                return;
+            }
+
+            const rosterStudents = getCurrentRosterStudents();
+            if (rosterStudents.length === 0) {
+                alert('There are no students in this roster.');
+                return;
+            }
+
+            const now = new Date().toISOString();
+            rosterStudents.forEach(student => {
+                const status = getDraftOrSavedStatus(ctx, student.lrn);
+                const key = attendanceKey(ctx.date, ctx.gradeLevel, ctx.section, ctx.subject, student.lrn);
+                db.attendance[key] = {
+                    date: ctx.date,
+                    gradeLevel: ctx.gradeLevel,
+                    section: ctx.section,
+                    subject: ctx.subject,
+                    lrn: student.lrn,
+                    status,
+                    updatedAt: now
+                };
+            });
+
+            draftAttendance = {};
+            setUnsavedChanges(false);
+            unlockedRecordContextKey = '';
+            savedRecordExists = true;
+            attendanceLocked = true;
+            saveDatabase();
+            currentContext = getSelectedContext();
+            refreshAttendanceLockState();
+            renderCards();
+            updateRosterSummary();
+            alert(`Attendance saved for ${ctx.gradeLevel} ${ctx.section}, ${ctx.subject}, ${ctx.date}.`);
+        }
+
+        function switchTab(tab) {
+            if (tab !== 'attendance' && !confirmDiscardIfNeeded()) return;
+
+            document.getElementById('view-attendance').style.display = tab === 'attendance' ? 'block' : 'none';
+            document.getElementById('view-reports').style.display = tab === 'reports' ? 'block' : 'none';
+            document.getElementById('view-database').style.display = tab === 'database' ? 'block' : 'none';
+
+            document.getElementById('btnTabAttendance').className = tab === 'attendance' ? 'tab-btn active' : 'tab-btn';
+            document.getElementById('btnTabReports').className = tab === 'reports' ? 'tab-btn active' : 'tab-btn';
+            document.getElementById('btnTabDatabase').className = tab === 'database' ? 'tab-btn active' : 'tab-btn';
+
+            if (tab === 'reports') prepareReportFilters();
+            if (tab === 'database') {
+                updateDatabaseStats();
+                updatePreviewFilters('grade');
+            }
+        }
+
+        function resetToToday() {
+            if (!confirmDiscardIfNeeded()) return;
+            switchTab('attendance');
+            document.getElementById('attendanceDate').value = getTodayString();
+            setUnsavedChanges(false);
+            draftAttendance = {};
+            unlockedRecordContextKey = '';
+            refreshAttendanceLockState();
+            renderCards();
+            updateRosterSummary();
+            currentContext = getSelectedContext();
+        }
+
+        function parseCSVRows(text) {
+            const rows = [];
+            let row = [];
+            let field = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const next = text[i + 1];
+
+                if (char === '"') {
+                    if (inQuotes && next === '"') {
+                        field += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    row.push(field);
+                    field = '';
+                } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                    if (char === '\r' && next === '\n') i++;
+                    row.push(field);
+                    if (row.some(cell => String(cell).trim() !== '')) rows.push(row);
+                    row = [];
+                    field = '';
+                } else {
+                    field += char;
+                }
+            }
+
+            row.push(field);
+            if (row.some(cell => String(cell).trim() !== '')) rows.push(row);
+            return rows;
+        }
+
+        function headerIndex(headers, aliases) {
+            const normalizedHeaders = headers.map(h => normalizeText(h).toLowerCase());
+            for (const alias of aliases) {
+                const target = alias.toLowerCase();
+                const idx = normalizedHeaders.indexOf(target);
+                if (idx >= 0) return idx;
+            }
+            return -1;
+        }
+
+        document.getElementById('csvUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                importRosterCSV(event.target.result, file.name);
+            };
+            reader.readAsText(file);
+        });
+
+        document.getElementById('restoreUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                restoreDatabase(event.target.result);
+            };
+            reader.readAsText(file);
+        });
+
+        function importRosterCSV(text, filename) {
+            const rows = parseCSVRows(text);
+            const resultBox = document.getElementById('importResult');
+            resultBox.style.display = 'block';
+
+            if (rows.length < 2) {
+                resultBox.textContent = 'Import failed. The CSV has no data rows.';
+                return;
+            }
+
+            const headers = rows[0];
+            const idxLRN = headerIndex(headers, ['LRN', 'Learner Reference Number']);
+            const idxName = headerIndex(headers, ['Complete Name', 'Name', 'Student Name', 'Learner Name']);
+            const idxGender = headerIndex(headers, ['Gender', 'Sex']);
+            const idxGrade = headerIndex(headers, ['Grade Level', 'Grade']);
+            const idxSection = headerIndex(headers, ['Section']);
+            const idxSubject = headerIndex(headers, ['Subject', 'Learning Area']);
+
+            const missing = [];
+            if (idxLRN < 0) missing.push('LRN');
+            if (idxName < 0) missing.push('Complete Name or Name');
+            if (idxGender < 0) missing.push('Gender');
+            if (idxGrade < 0) missing.push('Grade Level');
+            if (idxSection < 0) missing.push('Section');
+            if (idxSubject < 0) missing.push('Subject');
+
+            if (missing.length > 0) {
+                resultBox.textContent = 'Import failed. Missing required column/s: ' + missing.join(', ');
+                return;
+            }
+
+            let addedStudents = 0;
+            let updatedStudents = 0;
+            let addedRosters = 0;
+            let duplicateRows = 0;
+            let skippedRows = 0;
+            let lrnWarnings = 0;
+            const seenRows = new Set();
+            const warnings = [];
+
+            for (let i = 1; i < rows.length; i++) {
+                const cols = rows[i];
+                const lrn = normalizeLRN(cols[idxLRN]);
+                const name = normalizeName(cols[idxName]);
+                const gender = normalizeGender(cols[idxGender]);
+                const gradeLevel = normalizeText(cols[idxGrade]);
+                const section = normalizeText(cols[idxSection]).toUpperCase();
+                const subject = normalizeText(cols[idxSubject]);
+
+                if (!lrn || !name || !gender || !gradeLevel || !section || !subject) {
+                    skippedRows++;
+                    if (warnings.length < 10) warnings.push(`Row ${i + 1}: skipped because one or more required values are blank.`);
+                    continue;
+                }
+
+                if (/e\+|e-/i.test(lrn)) {
+                    lrnWarnings++;
+                    if (warnings.length < 10) warnings.push(`Row ${i + 1}: LRN looks like scientific notation (${lrn}). Format LRN as text before exporting from ISS or spreadsheet software.`);
+                }
+
+                const rowKey = rosterKey(lrn, gradeLevel, section, subject);
+                if (seenRows.has(rowKey)) {
+                    duplicateRows++;
+                    continue;
+                }
+                seenRows.add(rowKey);
+
+                const existing = db.students[lrn];
+                if (!existing) {
+                    db.students[lrn] = { lrn, name, gender, updatedAt: new Date().toISOString() };
+                    addedStudents++;
+                } else {
+                    const changed = existing.name !== name || existing.gender !== gender;
+                    db.students[lrn] = { ...existing, lrn, name, gender, updatedAt: new Date().toISOString() };
+                    if (changed) updatedStudents++;
+                }
+
+                const existsRoster = db.rosters.some(r => r.lrn === lrn && r.gradeLevel === gradeLevel && r.section === section && r.subject === subject);
+                if (!existsRoster) {
+                    db.rosters.push({ lrn, gradeLevel, section, subject });
+                    addedRosters++;
+                } else {
+                    duplicateRows++;
+                }
+            }
+
+            saveDatabase();
+            populateDailyFilters(getSelectedContext());
+            renderCards();
+            updateRosterSummary();
+
+            let message = '';
+            message += `Imported file: ${filename || 'CSV file'}\n`;
+            message += `Data rows checked: ${rows.length - 1}\n`;
+            message += `New students added: ${addedStudents}\n`;
+            message += `Existing students updated: ${updatedStudents}\n`;
+            message += `New roster memberships added: ${addedRosters}\n`;
+            message += `Duplicate rows or memberships skipped: ${duplicateRows}\n`;
+            message += `Rows skipped because of missing values: ${skippedRows}\n`;
+            message += `LRN formatting warnings: ${lrnWarnings}\n`;
+            if (warnings.length > 0) message += '\nWarnings:\n' + warnings.join('\n');
+            resultBox.textContent = message;
+
+            document.getElementById('csvUpload').value = '';
+        }
+
+        function downloadTemplate() {
+            const csv = 'LRN,Complete Name,Gender,Grade Level,Section,Subject\n"123456789012","DELA CRUZ, JUAN SANTOS","Male","9","JUPITER","Mathematics"\n';
+            downloadBlob(csv, 'Attendance_Roster_Template.csv', 'text/csv;charset=utf-8;');
+        }
+
+        function openAddRosterModal() {
+            const ctx = getSelectedContext();
+            document.getElementById('newStudentLRN').value = '';
+            document.getElementById('newStudentName').value = '';
+            document.getElementById('newStudentGender').value = 'Male';
+            document.getElementById('newStudentGrade').value = ctx.gradeLevel || '';
+            document.getElementById('newStudentSection').value = ctx.section || '';
+            document.getElementById('newStudentSubject').value = ctx.subject || '';
+            document.getElementById('addRosterModal').style.display = 'flex';
+        }
+
+        function closeAddRosterModal() {
+            document.getElementById('addRosterModal').style.display = 'none';
+        }
+
+        function saveNewRosterEntry() {
+            const lrn = normalizeLRN(document.getElementById('newStudentLRN').value);
+            const name = normalizeName(document.getElementById('newStudentName').value);
+            const gender = normalizeGender(document.getElementById('newStudentGender').value);
+            const gradeLevel = normalizeText(document.getElementById('newStudentGrade').value);
+            const section = normalizeText(document.getElementById('newStudentSection').value).toUpperCase();
+            const subject = normalizeText(document.getElementById('newStudentSubject').value);
+
+            if (!lrn || !name || !gradeLevel || !section || !subject) {
+                alert('Please fill in LRN, Complete Name, Grade Level, Section, and Subject.');
+                return;
+            }
+
+            db.students[lrn] = { lrn, name, gender, updatedAt: new Date().toISOString() };
+            const existsRoster = db.rosters.some(r => r.lrn === lrn && r.gradeLevel === gradeLevel && r.section === section && r.subject === subject);
+            if (!existsRoster) db.rosters.push({ lrn, gradeLevel, section, subject });
+
+            saveDatabase();
+            populateDailyFilters({ gradeLevel, section, subject });
+            document.getElementById('attendanceDate').value = document.getElementById('attendanceDate').value || getTodayString();
+            draftAttendance = {};
+            setUnsavedChanges(false);
+            renderCards();
+            updateRosterSummary();
+            currentContext = getSelectedContext();
+            closeAddRosterModal();
+        }
+
+        function openEditStudentModal(lrn) {
+            const student = db.students[lrn];
+            if (!student) return;
+            editingLRN = lrn;
+            document.getElementById('editStudentLRN').value = lrn;
+            document.getElementById('editStudentName').value = student.name;
+            document.getElementById('editStudentGender').value = student.gender || 'Female';
+            document.getElementById('editStudentModal').style.display = 'flex';
+        }
+
+        function closeEditStudentModal() {
+            document.getElementById('editStudentModal').style.display = 'none';
+            editingLRN = '';
+        }
+
+        function confirmEditStudent() {
+            if (!editingLRN || !db.students[editingLRN]) return;
+            const name = normalizeName(document.getElementById('editStudentName').value);
+            const gender = normalizeGender(document.getElementById('editStudentGender').value);
+            if (!name) {
+                alert('Complete Name cannot be blank.');
+                return;
+            }
+            db.students[editingLRN].name = name;
+            db.students[editingLRN].gender = gender;
+            db.students[editingLRN].updatedAt = new Date().toISOString();
+            saveDatabase();
+            renderCards();
+            updateRosterSummary();
+            closeEditStudentModal();
+        }
+
+        function prepareReportFilters() {
+            const previous = {
+                gradeLevel: document.getElementById('reportGradeSelect').value,
+                section: document.getElementById('reportSectionSelect').value,
+                subject: document.getElementById('reportSubjectSelect').value
+            };
+            fillSelect(document.getElementById('reportGradeSelect'), getUniqueGrades(), 'Select Grade', previous.gradeLevel);
+            fillSelect(document.getElementById('reportSectionSelect'), getSectionsForGrade(document.getElementById('reportGradeSelect').value), 'Select Section', previous.section);
+            fillSelect(document.getElementById('reportSubjectSelect'), getSubjectsForGradeSection(document.getElementById('reportGradeSelect').value, document.getElementById('reportSectionSelect').value), 'Select Subject', previous.subject);
+            populateReportMonths();
+            populateReportStudents();
+            generateReport();
+        }
+
+        function onReportFilterChange(level) {
+            if (level === 'grade') {
+                const grade = document.getElementById('reportGradeSelect').value;
+                fillSelect(document.getElementById('reportSectionSelect'), getSectionsForGrade(grade), 'Select Section', '');
+                fillSelect(document.getElementById('reportSubjectSelect'), getSubjectsForGradeSection(grade, document.getElementById('reportSectionSelect').value), 'Select Subject', '');
+            }
+            if (level === 'section') {
+                const grade = document.getElementById('reportGradeSelect').value;
+                const section = document.getElementById('reportSectionSelect').value;
+                fillSelect(document.getElementById('reportSubjectSelect'), getSubjectsForGradeSection(grade, section), 'Select Subject', '');
+            }
+            populateReportMonths();
+            populateReportStudents();
+            generateReport();
+        }
+
+        function toggleReportMode() {
+            const isCustom = document.getElementById('modeCustom').checked;
+            const isIndividual = document.getElementById('modeIndividual').checked;
+
+            document.getElementById('reportMonthGroup').style.display = isCustom ? 'none' : 'flex';
+            document.getElementById('customDateContainer').style.display = isCustom ? 'flex' : 'none';
+            document.getElementById('reportStudentGroup').style.display = isIndividual ? 'flex' : 'none';
+            document.getElementById('individualSummary').style.display = 'none';
+            document.getElementById('reportTable').innerHTML = '';
+
+            populateReportStudents();
+            generateReport();
+        }
+
+        function getReportContext() {
+            return {
+                gradeLevel: document.getElementById('reportGradeSelect').value,
+                section: document.getElementById('reportSectionSelect').value,
+                subject: document.getElementById('reportSubjectSelect').value
+            };
+        }
+
+        function attendanceRecordMatchesContext(record, ctx) {
+            return record.gradeLevel === ctx.gradeLevel && record.section === ctx.section && record.subject === ctx.subject;
+        }
+
+        function populateReportMonths() {
+            const ctx = getReportContext();
+            const monthSelect = document.getElementById('reportMonthSelect');
+            const previous = monthSelect.value;
+            const months = new Set();
+
+            Object.values(db.attendance).forEach(record => {
+                if (!ctx.gradeLevel || !ctx.section || !ctx.subject) return;
+                if (attendanceRecordMatchesContext(record, ctx)) months.add(record.date.substring(0, 7));
+            });
+
+            monthSelect.innerHTML = '<option value="">Select Month</option>';
+            const sortedMonths = Array.from(months).sort().reverse();
+            sortedMonths.forEach(month => {
+                const [yyyy, mm] = month.split('-');
+                const dateObj = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
+                const label = dateObj.toLocaleString('default', { month: 'long', year: 'numeric' });
+                monthSelect.appendChild(new Option(label, month));
+            });
+
+            if (previous && sortedMonths.includes(previous)) monthSelect.value = previous;
+            else if (sortedMonths.length > 0) monthSelect.value = sortedMonths[0];
+        }
+
+        function populateReportStudents() {
+            const ctx = getReportContext();
+            const studentSelect = document.getElementById('reportStudentSelect');
+            const previous = studentSelect.value;
+            studentSelect.innerHTML = '<option value="">Select Student</option>';
+
+            if (!ctx.gradeLevel || !ctx.section || !ctx.subject) return;
+
+            const lrns = db.rosters
+                .filter(r => sameRosterContext(r, ctx.gradeLevel, ctx.section, ctx.subject))
+                .map(r => r.lrn);
+            const students = sortStudentObjects(Array.from(new Set(lrns)).map(lrn => db.students[lrn]).filter(Boolean));
+            students.forEach(s => studentSelect.appendChild(new Option(s.name, s.lrn)));
+
+            if (previous && students.some(s => s.lrn === previous)) studentSelect.value = previous;
+        }
+
+        function getTargetDatesForReport(ctx) {
+            const isCustom = document.getElementById('modeCustom').checked;
+            const dates = new Set();
+
+            if (!ctx.gradeLevel || !ctx.section || !ctx.subject) return [];
+
+            if (isCustom) {
+                const startDate = document.getElementById('reportStartDate').value;
+                const endDate = document.getElementById('reportEndDate').value;
+                if (!startDate || !endDate) return [];
+                Object.values(db.attendance).forEach(record => {
+                    if (attendanceRecordMatchesContext(record, ctx) && record.date >= startDate && record.date <= endDate) dates.add(record.date);
+                });
+            } else {
+                const monthKey = document.getElementById('reportMonthSelect').value;
+                if (!monthKey) return [];
+                Object.values(db.attendance).forEach(record => {
+                    if (attendanceRecordMatchesContext(record, ctx) && record.date.startsWith(monthKey)) dates.add(record.date);
+                });
+            }
+
+            return Array.from(dates).sort();
+        }
+
+        function reportStatusFor(date, ctx, lrn) {
+            const key = attendanceKey(date, ctx.gradeLevel, ctx.section, ctx.subject, lrn);
+            const record = db.attendance[key];
+            return record ? record.status : 'Unmarked';
+        }
+
+        function statusDisplay(status) {
+            if (!status || status === 'Unmarked') return '-';
+            return status.charAt(0);
+        }
+
+        function statusClass(status) {
+            if (status === 'Present') return 'cell-P';
+            if (status === 'Absent') return 'cell-A';
+            if (status === 'Late') return 'cell-L';
+            if (status === 'Excused') return 'cell-E';
+            return 'cell-U';
+        }
+
+        function clearTableElement(table) {
+            while (table.firstChild) table.removeChild(table.firstChild);
+        }
+
+        function appendCell(row, text, tag = 'td', className = '') {
+            const cell = document.createElement(tag);
+            cell.textContent = text;
+            if (className) cell.className = className;
+            row.appendChild(cell);
+            return cell;
+        }
+
+        function generateReport() {
+            const table = document.getElementById('reportTable');
+            const summaryDiv = document.getElementById('individualSummary');
+            clearTableElement(table);
+            summaryDiv.style.display = 'none';
+
+            const ctx = getReportContext();
+            if (!ctx.gradeLevel || !ctx.section || !ctx.subject) return;
+
+            const targetDates = getTargetDatesForReport(ctx);
+            if (targetDates.length === 0) {
+                const tr = document.createElement('tr');
+                appendCell(tr, 'No saved attendance records found for the selected report filters.', 'td');
+                table.appendChild(tr);
+                return;
+            }
+
+            const isIndividual = document.getElementById('modeIndividual').checked;
+
+            if (isIndividual) {
+                const lrn = document.getElementById('reportStudentSelect').value;
+                if (!lrn) return;
+                generateIndividualReport(table, summaryDiv, ctx, lrn, targetDates);
+            } else {
+                generateRosterReport(table, ctx, targetDates);
+            }
+        }
+
+        function generateRosterReport(table, ctx, targetDates) {
+            const lrns = db.rosters.filter(r => sameRosterContext(r, ctx.gradeLevel, ctx.section, ctx.subject)).map(r => r.lrn);
+            const students = sortStudentObjects(Array.from(new Set(lrns)).map(lrn => db.students[lrn]).filter(Boolean));
+            const isCustom = document.getElementById('modeCustom').checked;
+
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            appendCell(headerRow, 'Student Name', 'th', 'col-name');
+            targetDates.forEach(date => {
+                const [y, m, d] = date.split('-');
+                appendCell(headerRow, isCustom ? `${m}/${d}` : d, 'th');
+            });
+            appendCell(headerRow, 'Present', 'th');
+            appendCell(headerRow, 'Absent', 'th');
+            appendCell(headerRow, 'Late', 'th');
+            appendCell(headerRow, 'Excused', 'th');
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            students.forEach(student => {
+                const row = document.createElement('tr');
+                appendCell(row, student.name, 'td', 'col-name');
+                const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0 };
+
+                targetDates.forEach(date => {
+                    const status = reportStatusFor(date, ctx, student.lrn);
+                    if (counts[status] !== undefined) counts[status]++;
+                    appendCell(row, statusDisplay(status), 'td', statusClass(status));
+                });
+
+                appendCell(row, counts.Present, 'td', 'cell-P');
+                appendCell(row, counts.Absent, 'td', 'cell-A');
+                appendCell(row, counts.Late, 'td', 'cell-L');
+                appendCell(row, counts.Excused, 'td', 'cell-E');
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+        }
+
+        function generateIndividualReport(table, summaryDiv, ctx, lrn, targetDates) {
+            const student = db.students[lrn];
+            if (!student) return;
+            const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0 };
+
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            appendCell(headerRow, 'Date', 'th');
+            appendCell(headerRow, 'Record', 'th');
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            targetDates.forEach(date => {
+                const status = reportStatusFor(date, ctx, lrn);
+                counts[status] = (counts[status] || 0) + 1;
+                const [y, m, d] = date.split('-');
+                const dateObj = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+                const formattedDate = dateObj.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+                const row = document.createElement('tr');
+                appendCell(row, formattedDate, 'td');
+                appendCell(row, status === 'Unmarked' ? '-' : status, 'td', statusClass(status));
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+
+            summaryDiv.innerHTML = `
+                <div class="summary-item"><span class="summary-label">Student</span><span>${escapeHTML(student.name)}</span></div>
+                <div class="summary-item"><span class="summary-label">Present</span><span style="color: #4caf50;">${counts.Present}</span></div>
+                <div class="summary-item"><span class="summary-label">Absent</span><span style="color: #f44336;">${counts.Absent}</span></div>
+                <div class="summary-item"><span class="summary-label">Late</span><span style="color: #2196f3;">${counts.Late}</span></div>
+                <div class="summary-item"><span class="summary-label">Excused</span><span style="color: #9e9e9e;">${counts.Excused}</span></div>
+                <div class="summary-item"><span class="summary-label">Unmarked</span><span style="color: #777;">${counts.Unmarked}</span></div>
+            `;
+            summaryDiv.style.display = 'flex';
+        }
+
+        function escapeHTML(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function csvEscape(value) {
+            const text = String(value ?? '');
+            return '"' + text.replace(/"/g, '""') + '"';
+        }
+
+        function exportReportCSV() {
+            const table = document.getElementById('reportTable');
+            if (table.rows.length === 0) {
+                alert('Please generate a report first.');
+                return;
+            }
+
+            const ctx = getReportContext();
+            let csv = '';
+            csv += `Grade Level,${csvEscape(ctx.gradeLevel)}\n`;
+            csv += `Section,${csvEscape(ctx.section)}\n`;
+            csv += `Subject,${csvEscape(ctx.subject)}\n`;
+
+            if (document.getElementById('modeIndividual').checked) {
+                const lrn = document.getElementById('reportStudentSelect').value;
+                const student = db.students[lrn];
+                csv += `Student,${csvEscape(student ? student.name : '')}\n`;
+                csv += `LRN,${csvEscape(lrn)}\n`;
+            }
+            csv += '\n';
+
+            for (let i = 0; i < table.rows.length; i++) {
+                const rowData = [];
+                for (let j = 0; j < table.rows[i].cells.length; j++) {
+                    rowData.push(csvEscape(table.rows[i].cells[j].innerText));
+                }
+                csv += rowData.join(',') + '\n';
+            }
+
+            const safeContext = `${ctx.gradeLevel}_${ctx.section}_${ctx.subject}`.replace(/[^a-z0-9_]+/gi, '_');
+            downloadBlob(csv, `Attendance_Report_${safeContext}.csv`, 'text/csv;charset=utf-8;');
+        }
+
+        function exportRosterCSV() {
+            if (db.rosters.length === 0) {
+                alert('No roster data to export.');
+                return;
+            }
+            let csv = 'LRN,Complete Name,Gender,Grade Level,Section,Subject\n';
+            const sortedRosters = [...db.rosters].sort((a, b) => {
+                return gradeSortValue(a.gradeLevel) - gradeSortValue(b.gradeLevel)
+                    || a.section.localeCompare(b.section)
+                    || a.subject.localeCompare(b.subject)
+                    || (db.students[a.lrn]?.name || '').localeCompare(db.students[b.lrn]?.name || '');
+            });
+
+            sortedRosters.forEach(r => {
+                const s = db.students[r.lrn] || { name: '', gender: '' };
+                csv += [r.lrn, s.name, s.gender, r.gradeLevel, r.section, r.subject].map(csvEscape).join(',') + '\n';
+            });
+            downloadBlob(csv, 'Attendance_Current_Roster.csv', 'text/csv;charset=utf-8;');
+        }
+
+        function backupDatabase() {
+            const backup = JSON.stringify(db, null, 2);
+            const date = getTodayString();
+            downloadBlob(backup, `Attendance_Database_Backup_${date}.json`, 'application/json;charset=utf-8;');
+        }
+
+        function restoreDatabase(text) {
+            if (!confirm('Restore this backup? This will replace the current local attendance database.')) {
+                document.getElementById('restoreUpload').value = '';
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(text);
+                db = normalizeDatabase(parsed);
+                saveDatabase();
+                populateDailyFilters();
+                renderCards();
+                updateRosterSummary();
+                alert('Database restored successfully.');
+            } catch (err) {
+                alert('Restore failed. The selected file is not a valid attendance database backup.');
+            }
+            document.getElementById('restoreUpload').value = '';
+        }
+
+        function downloadBlob(content, filename, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function clearDatabase() {
+            const firstConfirm = confirm('Delete the local attendance database? This removes students, rosters, and attendance records from this browser.');
+            if (!firstConfirm) return;
+            const secondConfirm = confirm('This cannot be undone unless you have a JSON backup. Continue?');
+            if (!secondConfirm) return;
+
+            localStorage.removeItem(DB_KEY);
+            LEGACY_KEYS.forEach(key => localStorage.removeItem(key));
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('attendance_')) keysToRemove.push(key);
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+
+            db = createEmptyDatabase();
+            draftAttendance = {};
+            setUnsavedChanges(false);
+            initializeDateInput();
+            refreshAllUI();
+            alert('Local attendance database deleted.');
+        }
+
+        function updateDatabaseStats() {
+            const stats = document.getElementById('databaseStats');
+            const totalStudents = Object.keys(db.students).length;
+            const totalRosters = db.rosters.length;
+            const totalRecords = Object.keys(db.attendance).length;
+            const grades = getUniqueGrades().length;
+            const sections = Array.from(new Set(db.rosters.map(r => `${r.gradeLevel}|${r.section}`))).length;
+            const subjects = Array.from(new Set(db.rosters.map(r => r.subject))).length;
+
+            stats.innerHTML = `
+                <div class="stat-card"><div class="stat-label">Students</div><div class="stat-value">${totalStudents}</div></div>
+                <div class="stat-card"><div class="stat-label">Roster Memberships</div><div class="stat-value">${totalRosters}</div></div>
+                <div class="stat-card"><div class="stat-label">Attendance Records</div><div class="stat-value">${totalRecords}</div></div>
+                <div class="stat-card"><div class="stat-label">Grade Levels</div><div class="stat-value">${grades}</div></div>
+                <div class="stat-card"><div class="stat-label">Sections</div><div class="stat-value">${sections}</div></div>
+                <div class="stat-card"><div class="stat-label">Subjects</div><div class="stat-value">${subjects}</div></div>
+            `;
+
+            const statusText = document.getElementById('databaseStatusText');
+            if (statusText) {
+                if (totalStudents === 0) {
+                    statusText.textContent = 'No roster database loaded yet.';
+                } else {
+                    statusText.textContent = `${totalStudents} students | ${totalRosters} roster memberships | ${totalRecords} attendance records`;
+                }
+            }
+        }
+
+        function updatePreviewFilters(level) {
+            const gradeSelect = document.getElementById('previewGradeSelect');
+            const sectionSelect = document.getElementById('previewSectionSelect');
+            const subjectSelect = document.getElementById('previewSubjectSelect');
+
+            if (level === 'grade') {
+                fillSelect(gradeSelect, getUniqueGrades(), 'Select Grade', gradeSelect.value);
+                fillSelect(sectionSelect, getSectionsForGrade(gradeSelect.value), 'Select Section', '');
+                fillSelect(subjectSelect, getSubjectsForGradeSection(gradeSelect.value, sectionSelect.value), 'Select Subject', '');
+            } else if (level === 'section') {
+                fillSelect(subjectSelect, getSubjectsForGradeSection(gradeSelect.value, sectionSelect.value), 'Select Subject', '');
+            }
+
+            renderRosterPreview();
+        }
+
+        function renderRosterPreview() {
+            const table = document.getElementById('previewTable');
+            clearTableElement(table);
+
+            const grade = document.getElementById('previewGradeSelect').value;
+            const section = document.getElementById('previewSectionSelect').value;
+            const subject = document.getElementById('previewSubjectSelect').value;
+
+            if (!grade || !section || !subject) {
+                const row = document.createElement('tr');
+                appendCell(row, 'Select grade, section, and subject to preview the roster.', 'td');
+                table.appendChild(row);
+                return;
+            }
+
+            const students = sortStudentObjects(db.rosters
+                .filter(r => sameRosterContext(r, grade, section, subject))
+                .map(r => db.students[r.lrn])
+                .filter(Boolean));
+
+            const thead = document.createElement('thead');
+            const header = document.createElement('tr');
+            appendCell(header, '#', 'th');
+            appendCell(header, 'LRN', 'th');
+            appendCell(header, 'Complete Name', 'th');
+            appendCell(header, 'Gender', 'th');
+            thead.appendChild(header);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            students.forEach((s, idx) => {
+                const row = document.createElement('tr');
+                appendCell(row, idx + 1, 'td');
+                appendCell(row, s.lrn, 'td');
+                appendCell(row, s.name, 'td', 'col-name');
+                appendCell(row, s.gender, 'td');
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+        }
+
+        function refreshAllUI() {
+            updateDatabaseStats();
+            populateDailyFilters(getSelectedContext());
+            prepareReportFilters();
+            refreshAttendanceLockState();
+            renderCards();
+            updateRosterSummary();
+            updatePreviewFilters('grade');
+        }
+
+        window.addEventListener('beforeunload', function(e) {
+            if (!hasUnsavedChanges) return;
+            e.preventDefault();
+            e.returnValue = '';
+        });
+
+
+        const APP_VERSION = '2026.06.10-pwa1';
+        let pendingServiceWorker = null;
+
+        function showPwaUpdateBanner(message, buttonText, clickHandler) {
+            const banner = document.getElementById('pwaUpdateBanner');
+            const text = document.getElementById('pwaUpdateText');
+            const button = document.getElementById('pwaUpdateButton');
+            if (!banner || !text || !button) return;
+            text.textContent = message;
+            button.textContent = buttonText;
+            button.onclick = clickHandler;
+            banner.style.display = 'flex';
+        }
+
+        function hidePwaUpdateBanner() {
+            const banner = document.getElementById('pwaUpdateBanner');
+            if (banner) banner.style.display = 'none';
+        }
+
+        function registerServiceWorker() {
+            if (!('serviceWorker' in navigator)) return;
+
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(function(registration) {
+                        if (registration.waiting && navigator.serviceWorker.controller) {
+                            pendingServiceWorker = registration.waiting;
+                            showPwaUpdateBanner(
+                                'A new app version is ready.',
+                                'Refresh App',
+                                applyPwaUpdate
+                            );
+                        }
+
+                        registration.addEventListener('updatefound', function() {
+                            const newWorker = registration.installing;
+                            if (!newWorker) return;
+
+                            newWorker.addEventListener('statechange', function() {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    pendingServiceWorker = newWorker;
+                                    showPwaUpdateBanner(
+                                        'A new app version is ready.',
+                                        'Refresh App',
+                                        applyPwaUpdate
+                                    );
+                                }
+                            });
+                        });
+                    })
+                    .catch(function(error) {
+                        console.warn('Service worker registration failed:', error);
+                    });
+            });
+
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', function() {
+                if (refreshing) return;
+                refreshing = true;
+                window.location.reload();
+            });
+        }
+
+        function applyPwaUpdate() {
+            if (pendingServiceWorker) {
+                pendingServiceWorker.postMessage({ type: 'SKIP_WAITING' });
+            } else {
+                window.location.reload();
+            }
+        }
+
+        registerServiceWorker();
+
+        loadDatabase();
+        initializeDateInput();
+        populateDailyFilters();
+        currentContext = getSelectedContext();
+        refreshAllUI();
+    </script>
+</body>
+</html>
