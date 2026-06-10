@@ -6,16 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Attendance">
-
-    <meta name="theme-color" content="#673ab7">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="application-name" content="Attendance">
-    <meta name="format-detection" content="telephone=no">
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
-    <title>Offline Attendance</title>
+    <title>Offline Attendance v2</title>
     <style>
         :root {
             --primary: #673ab7;
@@ -481,37 +472,6 @@
             white-space: nowrap;
         }
 
-
-        .pwa-update-banner {
-            display: none;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            background: #fff3cd;
-            border: 1px solid #ffecb5;
-            color: #5f4700;
-            padding: 12px 16px;
-            margin-bottom: 20px;
-            border-radius: 10px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-            font-weight: bold;
-        }
-
-        .pwa-update-banner button {
-            background: var(--primary);
-            color: white;
-            white-space: nowrap;
-        }
-
-        @media (display-mode: standalone) {
-            body {
-                padding-top: max(20px, env(safe-area-inset-top));
-                padding-left: max(20px, env(safe-area-inset-left));
-                padding-right: max(20px, env(safe-area-inset-right));
-                padding-bottom: max(20px, env(safe-area-inset-bottom));
-            }
-        }
-
         @media (max-width: 720px) {
             body { padding: 12px; }
             .header { align-items: stretch; }
@@ -539,11 +499,6 @@
             <div class="clock" id="liveClock">Loading time...</div>
             <button onclick="resetToToday()" class="btn-clear" title="Reset View to Today">🔄</button>
         </div>
-    </div>
-
-    <div class="pwa-update-banner" id="pwaUpdateBanner" role="status" aria-live="polite">
-        <span id="pwaUpdateText">A new app version is available.</span>
-        <button type="button" id="pwaUpdateButton">Refresh App</button>
     </div>
 
     <div id="view-attendance">
@@ -684,7 +639,7 @@
 
         <div class="panel">
             <h2>Backup and Restore</h2>
-            <p>Use this before moving to another browser, computer, or tablet. The backup includes students, rosters, and attendance records. This tablet version stores records on this device, so backup regularly.</p>
+            <p>Use this before moving to another browser, computer, or tablet. The backup includes students, rosters, and attendance records.</p>
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                 <button class="btn-green" onclick="backupDatabase()">Backup Database JSON</button>
                 <input type="file" id="restoreUpload" accept=".json,application/json">
@@ -2044,80 +1999,6 @@
             e.preventDefault();
             e.returnValue = '';
         });
-
-
-        const APP_VERSION = '2026.06.10-pwa1';
-        let pendingServiceWorker = null;
-
-        function showPwaUpdateBanner(message, buttonText, clickHandler) {
-            const banner = document.getElementById('pwaUpdateBanner');
-            const text = document.getElementById('pwaUpdateText');
-            const button = document.getElementById('pwaUpdateButton');
-            if (!banner || !text || !button) return;
-            text.textContent = message;
-            button.textContent = buttonText;
-            button.onclick = clickHandler;
-            banner.style.display = 'flex';
-        }
-
-        function hidePwaUpdateBanner() {
-            const banner = document.getElementById('pwaUpdateBanner');
-            if (banner) banner.style.display = 'none';
-        }
-
-        function registerServiceWorker() {
-            if (!('serviceWorker' in navigator)) return;
-
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(function(registration) {
-                        if (registration.waiting && navigator.serviceWorker.controller) {
-                            pendingServiceWorker = registration.waiting;
-                            showPwaUpdateBanner(
-                                'A new app version is ready.',
-                                'Refresh App',
-                                applyPwaUpdate
-                            );
-                        }
-
-                        registration.addEventListener('updatefound', function() {
-                            const newWorker = registration.installing;
-                            if (!newWorker) return;
-
-                            newWorker.addEventListener('statechange', function() {
-                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    pendingServiceWorker = newWorker;
-                                    showPwaUpdateBanner(
-                                        'A new app version is ready.',
-                                        'Refresh App',
-                                        applyPwaUpdate
-                                    );
-                                }
-                            });
-                        });
-                    })
-                    .catch(function(error) {
-                        console.warn('Service worker registration failed:', error);
-                    });
-            });
-
-            let refreshing = false;
-            navigator.serviceWorker.addEventListener('controllerchange', function() {
-                if (refreshing) return;
-                refreshing = true;
-                window.location.reload();
-            });
-        }
-
-        function applyPwaUpdate() {
-            if (pendingServiceWorker) {
-                pendingServiceWorker.postMessage({ type: 'SKIP_WAITING' });
-            } else {
-                window.location.reload();
-            }
-        }
-
-        registerServiceWorker();
 
         loadDatabase();
         initializeDateInput();
