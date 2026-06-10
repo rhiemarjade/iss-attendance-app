@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
     <title>Offline Attendance</title>
-    <!-- Offline Attendance PWA v3, report period metadata fix -->
+    <!-- Offline Attendance PWA v4, IndexedDB database and backup safety -->
     <style>
         :root {
             --primary: #673ab7;
@@ -504,6 +504,51 @@
             white-space: nowrap;
         }
 
+        .backup-safety-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: #fff8e1;
+            border: 1px solid #ffe082;
+            color: #5d4300;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+
+        .backup-safety-banner strong { display: block; margin-bottom: 3px; }
+        .backup-safety-banner span { display: block; line-height: 1.35; }
+        .backup-safety-banner button { background: var(--green); color: white; white-space: nowrap; }
+
+        .backup-status-card {
+            background: #f8fbff;
+            border: 1px solid #bbdefb;
+            color: #0d47a1;
+            padding: 14px;
+            border-radius: 10px;
+            line-height: 1.45;
+            margin-bottom: 14px;
+        }
+
+        .backup-status-title {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .backup-status-warning {
+            background: #fff8e1;
+            border-color: #ffe082;
+            color: #5d4300;
+        }
+
+        .backup-status-good {
+            background: #e8f5e9;
+            border-color: #a5d6a7;
+            color: #1b5e20;
+        }
+
         @media (display-mode: standalone) {
             body {
                 padding-top: max(20px, env(safe-area-inset-top));
@@ -525,6 +570,8 @@
             .date-range-group { width: 100%; flex-direction: column; align-items: stretch; }
             .report-mode-group, .report-select-field, .report-month-field, .report-date-field, .report-student-field { width: 100%; min-width: 0; flex-basis: auto; }
             .mode-toggle { width: 100%; }
+            .backup-safety-banner { align-items: stretch; flex-direction: column; }
+            .backup-safety-banner button { width: 100%; }
             .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
         }
     </style>
@@ -545,6 +592,14 @@
     <div class="pwa-update-banner" id="pwaUpdateBanner" role="status" aria-live="polite">
         <span id="pwaUpdateText">A new app version is available.</span>
         <button type="button" id="pwaUpdateButton">Refresh App</button>
+    </div>
+
+    <div class="backup-safety-banner" id="backupSafetyBanner" role="status" aria-live="polite">
+        <div>
+            <strong id="backupSafetyTitle">Backup recommended</strong>
+            <span id="backupSafetyText">Attendance records are stored on this device. Export a backup regularly.</span>
+        </div>
+        <button type="button" onclick="backupDatabase()">Backup Now</button>
     </div>
 
     <div id="view-attendance">
@@ -685,9 +740,16 @@
 
         <div class="panel">
             <h2>Backup and Restore</h2>
-            <p>Use this before moving to another browser, computer, or tablet. The backup includes students, rosters, and attendance records. This tablet version stores records on this device, so backup regularly.</p>
+            <p>Use this before moving to another browser, computer, or tablet. The backup includes all students, rosters, settings, and all saved attendance records currently stored on this device.</p>
+            <div class="backup-status-card" id="backupStatusPanel">
+                <div class="backup-status-title" id="backupStatusTitle">Backup status</div>
+                <div id="backupStatusText">Checking local database...</div>
+            </div>
+            <div class="note-box" style="margin-bottom: 12px;">
+                Do not clear browser website data for this app unless you have exported a database backup. Clearing website data can delete the local tablet database.
+            </div>
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                <button class="btn-green" onclick="backupDatabase()">Backup Database JSON</button>
+                <button class="btn-green" onclick="backupDatabase()">Backup Now</button>
                 <input type="file" id="restoreUpload" accept=".json,application/json">
                 <button class="btn-red" onclick="clearDatabase()">Delete Database</button>
             </div>
@@ -761,6 +823,9 @@
 
     <script>
         const DB_KEY = 'offlineAttendanceV2Database';
+        const IDB_NAME = 'OfflineAttendanceTabletDatabase';
+        const IDB_VERSION = 1;
+        const BACKUP_REMINDER_DAYS = 7;
         const LEGACY_KEYS = ['savedStudentRoster', 'sectionSchedule'];
         const STATUS_VALUES = ['Unmarked', 'Present', 'Absent', 'Late', 'Excused'];
 
@@ -773,16 +838,362 @@
         let savedRecordExists = false;
         let attendanceLocked = false;
         let unlockedRecordContextKey = '';
+        let indexedDbHandle = null;
+        let storageMode = 'indexeddb';
+        let pendingDatabaseSave = Promise.resolve();
 
         function createEmptyDatabase() {
+            const now = new Date().toISOString();
             return {
-                version: 2,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
+                version: 3,
+                createdAt: now,
+                updatedAt: now,
                 students: {},
                 rosters: [],
-                attendance: {}
+                attendance: {},
+                settings: {
+                    lastBackupAt: '',
+                    lastBackupRecordCount: 0,
+                    lastBackupLatestDate: '',
+                    backupReminderDays: BACKUP_REMINDER_DAYS,
+                    storageMode: 'indexeddb'
+                },
+                metadata: {
+                    databaseVersion: 3,
+                    storageEngine: 'IndexedDB',
+                    migratedFromLocalStorageAt: ''
+                }
             };
+        }
+
+        function isDatabaseEmpty(database) {
+            if (!database) return true;
+            return Object.keys(database.students || {}).length === 0
+                && (database.rosters || []).length === 0
+                && Object.keys(database.attendance || {}).length === 0;
+        }
+
+        function idbRequest(request) {
+            return new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        function idbTransactionDone(transaction) {
+            return new Promise((resolve, reject) => {
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = () => reject(transaction.error);
+                transaction.onabort = () => reject(transaction.error || new Error('IndexedDB transaction aborted.'));
+            });
+        }
+
+        function openIndexedDB() {
+            return new Promise((resolve, reject) => {
+                if (!('indexedDB' in window)) {
+                    reject(new Error('IndexedDB is not available in this browser.'));
+                    return;
+                }
+
+                const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+
+                request.onupgradeneeded = event => {
+                    const database = event.target.result;
+                    if (!database.objectStoreNames.contains('students')) {
+                        database.createObjectStore('students', { keyPath: 'lrn' });
+                    }
+                    if (!database.objectStoreNames.contains('rosters')) {
+                        database.createObjectStore('rosters', { keyPath: 'id' });
+                    }
+                    if (!database.objectStoreNames.contains('attendanceRecords')) {
+                        database.createObjectStore('attendanceRecords', { keyPath: 'id' });
+                    }
+                    if (!database.objectStoreNames.contains('settings')) {
+                        database.createObjectStore('settings', { keyPath: 'key' });
+                    }
+                    if (!database.objectStoreNames.contains('metadata')) {
+                        database.createObjectStore('metadata', { keyPath: 'key' });
+                    }
+                };
+
+                request.onsuccess = event => resolve(event.target.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function getAllFromIndexedStore(storeName) {
+            if (!indexedDbHandle) return [];
+            const transaction = indexedDbHandle.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            return idbRequest(store.getAll());
+        }
+
+        async function loadDatabaseFromIndexedDB() {
+            const clean = createEmptyDatabase();
+            if (!indexedDbHandle) return clean;
+
+            const [students, rosters, attendanceRecords, settingsRows, metadataRows] = await Promise.all([
+                getAllFromIndexedStore('students'),
+                getAllFromIndexedStore('rosters'),
+                getAllFromIndexedStore('attendanceRecords'),
+                getAllFromIndexedStore('settings'),
+                getAllFromIndexedStore('metadata')
+            ]);
+
+            students.forEach(student => {
+                const lrn = normalizeLRN(student.lrn);
+                if (!lrn) return;
+                clean.students[lrn] = {
+                    lrn,
+                    name: normalizeName(student.name || student.completeName || ''),
+                    gender: normalizeGender(student.gender),
+                    updatedAt: student.updatedAt || clean.updatedAt
+                };
+            });
+
+            const rosterMap = new Map();
+            rosters.forEach(record => {
+                const lrn = normalizeLRN(record.lrn);
+                const gradeLevel = normalizeText(record.gradeLevel);
+                const section = normalizeText(record.section);
+                const subject = normalizeText(record.subject);
+                if (!lrn || !gradeLevel || !section || !subject) return;
+                const key = rosterKey(lrn, gradeLevel, section, subject);
+                rosterMap.set(key, { lrn, gradeLevel, section, subject });
+            });
+            clean.rosters = Array.from(rosterMap.values());
+
+            attendanceRecords.forEach(record => {
+                const normalized = normalizeAttendanceRecord(record);
+                if (!normalized) return;
+                const key = attendanceKey(normalized.date, normalized.gradeLevel, normalized.section, normalized.subject, normalized.lrn);
+                clean.attendance[key] = normalized;
+            });
+
+            settingsRows.forEach(row => {
+                if (row.key === 'appSettings' && row.value && typeof row.value === 'object') {
+                    clean.settings = { ...clean.settings, ...row.value };
+                }
+            });
+
+            metadataRows.forEach(row => {
+                if (row.key === 'appMetadata' && row.value && typeof row.value === 'object') {
+                    clean.metadata = { ...clean.metadata, ...row.value };
+                    clean.createdAt = row.value.createdAt || clean.createdAt;
+                    clean.updatedAt = row.value.updatedAt || clean.updatedAt;
+                    clean.version = row.value.version || clean.version;
+                }
+            });
+
+            clean.settings.storageMode = 'indexeddb';
+            clean.metadata.storageEngine = 'IndexedDB';
+            return normalizeDatabase(clean);
+        }
+
+        async function persistDatabaseToIndexedDB(databaseToSave) {
+            if (!indexedDbHandle) return;
+            const transaction = indexedDbHandle.transaction(['students', 'rosters', 'attendanceRecords', 'settings', 'metadata'], 'readwrite');
+            const studentsStore = transaction.objectStore('students');
+            const rostersStore = transaction.objectStore('rosters');
+            const attendanceStore = transaction.objectStore('attendanceRecords');
+            const settingsStore = transaction.objectStore('settings');
+            const metadataStore = transaction.objectStore('metadata');
+
+            studentsStore.clear();
+            rostersStore.clear();
+            attendanceStore.clear();
+            settingsStore.clear();
+            metadataStore.clear();
+
+            Object.values(databaseToSave.students || {}).forEach(student => {
+                studentsStore.put({ ...student });
+            });
+
+            (databaseToSave.rosters || []).forEach(roster => {
+                const id = rosterKey(roster.lrn, roster.gradeLevel, roster.section, roster.subject);
+                rostersStore.put({ id, ...roster });
+            });
+
+            Object.keys(databaseToSave.attendance || {}).forEach(id => {
+                const record = databaseToSave.attendance[id];
+                attendanceStore.put({ id, ...record });
+            });
+
+            settingsStore.put({ key: 'appSettings', value: { ...(databaseToSave.settings || {}) } });
+            metadataStore.put({
+                key: 'appMetadata',
+                value: {
+                    ...(databaseToSave.metadata || {}),
+                    version: databaseToSave.version,
+                    createdAt: databaseToSave.createdAt,
+                    updatedAt: databaseToSave.updatedAt
+                }
+            });
+
+            await idbTransactionDone(transaction);
+        }
+
+        async function clearIndexedDatabaseStores() {
+            if (!indexedDbHandle) return;
+            const transaction = indexedDbHandle.transaction(['students', 'rosters', 'attendanceRecords', 'settings', 'metadata'], 'readwrite');
+            ['students', 'rosters', 'attendanceRecords', 'settings', 'metadata'].forEach(storeName => {
+                transaction.objectStore(storeName).clear();
+            });
+            await idbTransactionDone(transaction);
+        }
+
+        async function loadDatabase() {
+            try {
+                indexedDbHandle = await openIndexedDB();
+                storageMode = 'indexeddb';
+                db = await loadDatabaseFromIndexedDB();
+            } catch (err) {
+                console.warn('IndexedDB unavailable, falling back to localStorage:', err);
+                indexedDbHandle = null;
+                storageMode = 'localStorage';
+                db = createEmptyDatabase();
+            }
+
+            const localStorageData = localStorage.getItem(DB_KEY);
+            if (isDatabaseEmpty(db) && localStorageData) {
+                try {
+                    const parsed = JSON.parse(localStorageData);
+                    db = normalizeDatabase(parsed);
+                    db.metadata.migratedFromLocalStorageAt = new Date().toISOString();
+                    db.settings.storageMode = storageMode;
+                    db.metadata.storageEngine = storageMode === 'indexeddb' ? 'IndexedDB' : 'localStorage fallback';
+                    await saveDatabase({ skipRefresh: true });
+                } catch (err) {
+                    console.warn('Legacy localStorage database could not be migrated:', err);
+                    db = createEmptyDatabase();
+                }
+            }
+
+            db.settings.storageMode = storageMode;
+            db.metadata.storageEngine = storageMode === 'indexeddb' ? 'IndexedDB' : 'localStorage fallback';
+            await saveDatabase({ skipRefresh: true });
+        }
+
+        function normalizeAttendanceRecord(record) {
+            if (!record || typeof record !== 'object') return null;
+            const date = normalizeText(record.date);
+            const gradeLevel = normalizeText(record.gradeLevel || record.grade || record['Grade Level']);
+            const section = normalizeText(record.section || record.Section);
+            const subject = normalizeText(record.subject || record.Subject);
+            const lrn = normalizeLRN(record.lrn || record.LRN);
+            let status = normalizeText(record.status || record.Status || 'Unmarked');
+            if (!STATUS_VALUES.includes(status)) status = 'Unmarked';
+            if (!date || !gradeLevel || !section || !subject || !lrn) return null;
+            return {
+                date,
+                gradeLevel,
+                section,
+                subject,
+                lrn,
+                status,
+                updatedAt: record.updatedAt || record.timestamp || new Date().toISOString()
+            };
+        }
+
+        function normalizeDatabase(input) {
+            const clean = createEmptyDatabase();
+            if (!input || typeof input !== 'object') return clean;
+
+            clean.version = 3;
+            clean.createdAt = input.createdAt || input.metadata?.createdAt || new Date().toISOString();
+            clean.updatedAt = input.updatedAt || input.metadata?.updatedAt || new Date().toISOString();
+            clean.settings = { ...clean.settings, ...(input.settings || {}) };
+            clean.metadata = { ...clean.metadata, ...(input.metadata || {}) };
+
+            let studentSource = input.students || {};
+            if (Array.isArray(studentSource)) {
+                const obj = {};
+                studentSource.forEach(s => {
+                    const lrn = normalizeLRN(s.lrn || s.LRN);
+                    if (lrn) obj[lrn] = s;
+                });
+                studentSource = obj;
+            }
+
+            Object.keys(studentSource).forEach(lrn => {
+                const s = studentSource[lrn];
+                const cleanLRN = normalizeLRN(s.lrn || s.LRN || lrn);
+                if (!cleanLRN) return;
+                clean.students[cleanLRN] = {
+                    lrn: cleanLRN,
+                    name: normalizeName(s.name || s.completeName || s['Complete Name'] || ''),
+                    gender: normalizeGender(s.gender || s.Gender),
+                    updatedAt: s.updatedAt || clean.updatedAt
+                };
+            });
+
+            const rosterSource = Array.isArray(input.rosters) ? input.rosters : [];
+            const rosterMap = new Map();
+            rosterSource.forEach(r => {
+                const lrn = normalizeLRN(r.lrn || r.LRN);
+                const gradeLevel = normalizeText(r.gradeLevel || r.grade || r['Grade Level']);
+                const section = normalizeText(r.section || r.Section);
+                const subject = normalizeText(r.subject || r.Subject);
+                if (!lrn || !gradeLevel || !section || !subject) return;
+                const key = rosterKey(lrn, gradeLevel, section, subject);
+                rosterMap.set(key, { lrn, gradeLevel, section, subject });
+            });
+            clean.rosters = Array.from(rosterMap.values());
+
+            const attendanceObject = input.attendance && typeof input.attendance === 'object' ? input.attendance : {};
+            Object.keys(attendanceObject).forEach(key => {
+                const normalized = normalizeAttendanceRecord(attendanceObject[key]);
+                if (!normalized) return;
+                const attendanceId = attendanceKey(normalized.date, normalized.gradeLevel, normalized.section, normalized.subject, normalized.lrn);
+                clean.attendance[attendanceId] = normalized;
+            });
+
+            const attendanceArray = Array.isArray(input.attendanceRecords) ? input.attendanceRecords : [];
+            attendanceArray.forEach(record => {
+                const normalized = normalizeAttendanceRecord(record);
+                if (!normalized) return;
+                const attendanceId = attendanceKey(normalized.date, normalized.gradeLevel, normalized.section, normalized.subject, normalized.lrn);
+                clean.attendance[attendanceId] = normalized;
+            });
+
+            clean.settings.storageMode = storageMode;
+            clean.metadata.storageEngine = storageMode === 'indexeddb' ? 'IndexedDB' : 'localStorage fallback';
+            return clean;
+        }
+
+        function saveDatabase(options = {}) {
+            db.updatedAt = new Date().toISOString();
+            db.version = 3;
+            db.settings = { ...createEmptyDatabase().settings, ...(db.settings || {}), storageMode };
+            db.metadata = {
+                ...createEmptyDatabase().metadata,
+                ...(db.metadata || {}),
+                storageEngine: storageMode === 'indexeddb' ? 'IndexedDB' : 'localStorage fallback'
+            };
+
+            const saveSnapshot = JSON.parse(JSON.stringify(db));
+            if (storageMode === 'indexeddb' && indexedDbHandle) {
+                pendingDatabaseSave = pendingDatabaseSave
+                    .then(() => persistDatabaseToIndexedDB(saveSnapshot))
+                    .catch(err => {
+                        console.error('IndexedDB save failed:', err);
+                        try {
+                            localStorage.setItem(DB_KEY, JSON.stringify(saveSnapshot));
+                        } catch (fallbackErr) {
+                            console.error('Fallback localStorage save also failed:', fallbackErr);
+                        }
+                    });
+            } else {
+                try {
+                    localStorage.setItem(DB_KEY, JSON.stringify(saveSnapshot));
+                } catch (err) {
+                    console.error('localStorage save failed:', err);
+                }
+                pendingDatabaseSave = Promise.resolve();
+            }
+
+            if (!options.skipRefresh) refreshAllUI();
+            return pendingDatabaseSave;
         }
 
         function updateClock() {
@@ -795,66 +1206,6 @@
 
         setInterval(updateClock, 1000);
         updateClock();
-
-        function loadDatabase() {
-            const saved = localStorage.getItem(DB_KEY);
-            if (!saved) {
-                db = createEmptyDatabase();
-                return;
-            }
-
-            try {
-                const parsed = JSON.parse(saved);
-                db = normalizeDatabase(parsed);
-            } catch (err) {
-                alert('The saved database could not be read. A new empty database will be started. Your browser may still contain the old corrupted data.');
-                db = createEmptyDatabase();
-            }
-        }
-
-        function normalizeDatabase(input) {
-            const clean = createEmptyDatabase();
-            clean.version = 2;
-            clean.createdAt = input.createdAt || new Date().toISOString();
-            clean.updatedAt = input.updatedAt || new Date().toISOString();
-            clean.students = input.students && typeof input.students === 'object' ? input.students : {};
-            clean.rosters = Array.isArray(input.rosters) ? input.rosters : [];
-            clean.attendance = input.attendance && typeof input.attendance === 'object' ? input.attendance : {};
-
-            const normalizedStudents = {};
-            Object.keys(clean.students).forEach(lrn => {
-                const s = clean.students[lrn];
-                const cleanLRN = normalizeLRN(s.lrn || lrn);
-                if (!cleanLRN) return;
-                normalizedStudents[cleanLRN] = {
-                    lrn: cleanLRN,
-                    name: normalizeName(s.name || s.completeName || ''),
-                    gender: normalizeGender(s.gender),
-                    updatedAt: s.updatedAt || clean.updatedAt
-                };
-            });
-            clean.students = normalizedStudents;
-
-            const rosterMap = new Map();
-            clean.rosters.forEach(r => {
-                const lrn = normalizeLRN(r.lrn);
-                const gradeLevel = normalizeText(r.gradeLevel || r.grade || r['Grade Level']);
-                const section = normalizeText(r.section || r.Section);
-                const subject = normalizeText(r.subject || r.Subject);
-                if (!lrn || !gradeLevel || !section || !subject) return;
-                const key = rosterKey(lrn, gradeLevel, section, subject);
-                rosterMap.set(key, { lrn, gradeLevel, section, subject });
-            });
-            clean.rosters = Array.from(rosterMap.values());
-
-            return clean;
-        }
-
-        function saveDatabase() {
-            db.updatedAt = new Date().toISOString();
-            localStorage.setItem(DB_KEY, JSON.stringify(db));
-            refreshAllUI();
-        }
 
         function normalizeText(value) {
             return String(value ?? '').trim().replace(/\s+/g, ' ');
@@ -1912,13 +2263,107 @@
             downloadBlob(csv, 'Attendance_Current_Roster.csv', 'text/csv;charset=utf-8;');
         }
 
-        function backupDatabase() {
-            const backup = JSON.stringify(db, null, 2);
-            const date = getTodayString();
-            downloadBlob(backup, `Attendance_Database_Backup_${date}.json`, 'application/json;charset=utf-8;');
+        function getAttendanceDateRange() {
+            const dates = Object.values(db.attendance || {})
+                .map(record => record.date)
+                .filter(Boolean)
+                .sort();
+            if (dates.length === 0) return { first: '', latest: '' };
+            return { first: dates[0], latest: dates[dates.length - 1] };
         }
 
-        function restoreDatabase(text) {
+        function formatDateTime(value) {
+            if (!value) return 'No backup yet';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 'No backup yet';
+            return date.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function daysSince(value) {
+            if (!value) return Infinity;
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return Infinity;
+            return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        function getBackupStatusInfo() {
+            const totalRecords = Object.keys(db.attendance || {}).length;
+            const totalStudents = Object.keys(db.students || {}).length;
+            const totalRosters = (db.rosters || []).length;
+            const range = getAttendanceDateRange();
+            const lastBackupAt = db.settings?.lastBackupAt || '';
+            const lastBackupCount = Number(db.settings?.lastBackupRecordCount || 0);
+            const lastBackupLatestDate = db.settings?.lastBackupLatestDate || '';
+            const daysOld = daysSince(lastBackupAt);
+            const hasRecords = totalRecords > 0;
+            const hasNewRecords = totalRecords > lastBackupCount || (!!range.latest && range.latest !== lastBackupLatestDate);
+            const neverBackedUp = hasRecords && !lastBackupAt;
+            const weeklyDue = hasRecords && daysOld >= BACKUP_REMINDER_DAYS;
+            const due = neverBackedUp || weeklyDue || hasNewRecords;
+
+            let reason = '';
+            if (!hasRecords) reason = 'No attendance records saved yet.';
+            else if (neverBackedUp) reason = 'Attendance records exist, but no database backup has been exported yet.';
+            else if (weeklyDue) reason = `Last backup is ${daysOld} day/s old. Export a new backup.`;
+            else if (hasNewRecords) reason = 'New or changed attendance records exist after the last backup.';
+            else reason = 'Backup is current based on the saved records on this device.';
+
+            return {
+                totalRecords,
+                totalStudents,
+                totalRosters,
+                range,
+                lastBackupAt,
+                lastBackupCount,
+                lastBackupLatestDate,
+                daysOld,
+                due,
+                reason
+            };
+        }
+
+        function createBackupPayload(exportedAt) {
+            return {
+                appName: 'Offline Attendance',
+                backupVersion: 3,
+                exportedAt,
+                storageEngine: db.metadata?.storageEngine || 'IndexedDB',
+                databaseVersion: db.version || 3,
+                createdAt: db.createdAt,
+                updatedAt: db.updatedAt,
+                students: Object.values(db.students || {}),
+                rosters: [...(db.rosters || [])],
+                attendanceRecords: Object.values(db.attendance || {}),
+                settings: { ...(db.settings || {}) },
+                metadata: { ...(db.metadata || {}) }
+            };
+        }
+
+        async function backupDatabase() {
+            await pendingDatabaseSave;
+            const exportedAt = new Date().toISOString();
+            const statusBeforeBackup = getBackupStatusInfo();
+
+            db.settings.lastBackupAt = exportedAt;
+            db.settings.lastBackupRecordCount = statusBeforeBackup.totalRecords;
+            db.settings.lastBackupLatestDate = statusBeforeBackup.range.latest || '';
+            db.updatedAt = exportedAt;
+
+            const backup = JSON.stringify(createBackupPayload(exportedAt), null, 2);
+            const date = getTodayString();
+            downloadBlob(backup, `Attendance_Database_Backup_${date}.json`, 'application/json;charset=utf-8;');
+            await saveDatabase({ skipRefresh: true });
+            updateDatabaseStats();
+            updateBackupSafetyUI();
+        }
+
+        async function restoreDatabase(text) {
             if (!confirm('Restore this backup? This will replace the current local attendance database.')) {
                 document.getElementById('restoreUpload').value = '';
                 return;
@@ -1926,14 +2371,44 @@
 
             try {
                 const parsed = JSON.parse(text);
-                db = normalizeDatabase(parsed);
-                saveDatabase();
+                const restored = normalizeDatabase(parsed);
+                if (isDatabaseEmpty(restored)) {
+                    throw new Error('The backup has no usable students, rosters, or attendance records.');
+                }
+
+                db = restored;
+                db.settings.lastBackupAt = parsed.exportedAt || db.settings.lastBackupAt || '';
+                db.settings.lastBackupRecordCount = Object.keys(db.attendance || {}).length;
+                db.settings.lastBackupLatestDate = getAttendanceDateRange().latest || '';
+                await saveDatabase({ skipRefresh: true });
+
+                if (storageMode === 'indexeddb' && indexedDbHandle) {
+                    const verificationCopy = await loadDatabaseFromIndexedDB();
+                    const originalCounts = {
+                        students: Object.keys(db.students || {}).length,
+                        rosters: (db.rosters || []).length,
+                        attendance: Object.keys(db.attendance || {}).length
+                    };
+                    const verifiedCounts = {
+                        students: Object.keys(verificationCopy.students || {}).length,
+                        rosters: (verificationCopy.rosters || []).length,
+                        attendance: Object.keys(verificationCopy.attendance || {}).length
+                    };
+                    if (originalCounts.students !== verifiedCounts.students || originalCounts.rosters !== verifiedCounts.rosters || originalCounts.attendance !== verifiedCounts.attendance) {
+                        throw new Error('Restore verification failed. Saved database counts did not match the backup.');
+                    }
+                    db = verificationCopy;
+                }
+
                 populateDailyFilters();
                 renderCards();
                 updateRosterSummary();
-                alert('Database restored successfully.');
+                updateDatabaseStats();
+                updateBackupSafetyUI();
+                alert('Database restored and verified successfully.');
             } catch (err) {
-                alert('Restore failed. The selected file is not a valid attendance database backup.');
+                console.error(err);
+                alert('Restore failed. The selected file is not a valid attendance database backup, or the restored data could not be verified.');
             }
             document.getElementById('restoreUpload').value = '';
         }
@@ -1950,12 +2425,21 @@
             URL.revokeObjectURL(url);
         }
 
-        function clearDatabase() {
+        async function clearDatabase() {
+            const backupStatus = getBackupStatusInfo();
+            if (backupStatus.totalRecords > 0 && backupStatus.due) {
+                const proceedWithoutBackup = confirm('You have attendance records that are not fully backed up. Export a database backup first? Choose Cancel to stop and use Backup Now.');
+                if (!proceedWithoutBackup) return;
+            }
+
             const firstConfirm = confirm('Delete the local attendance database? This removes students, rosters, and attendance records from this browser.');
             if (!firstConfirm) return;
             const secondConfirm = confirm('This cannot be undone unless you have a JSON backup. Continue?');
             if (!secondConfirm) return;
 
+            if (storageMode === 'indexeddb' && indexedDbHandle) {
+                await clearIndexedDatabaseStores();
+            }
             localStorage.removeItem(DB_KEY);
             LEGACY_KEYS.forEach(key => localStorage.removeItem(key));
             const keysToRemove = [];
@@ -1973,6 +2457,42 @@
             alert('Local attendance database deleted.');
         }
 
+        function updateBackupSafetyUI() {
+            const status = getBackupStatusInfo();
+            const banner = document.getElementById('backupSafetyBanner');
+            const title = document.getElementById('backupSafetyTitle');
+            const text = document.getElementById('backupSafetyText');
+            const panel = document.getElementById('backupStatusPanel');
+            const panelTitle = document.getElementById('backupStatusTitle');
+            const panelText = document.getElementById('backupStatusText');
+            const storageLabel = storageMode === 'indexeddb' ? 'IndexedDB local database' : 'localStorage fallback';
+            const rangeText = status.range.first && status.range.latest
+                ? `Records covered on this device: ${status.range.first} to ${status.range.latest}.`
+                : 'No attendance date range yet.';
+            const backupText = status.lastBackupAt
+                ? `Last backup: ${formatDateTime(status.lastBackupAt)}. Last backed up record count: ${status.lastBackupCount}.`
+                : 'Last backup: No backup yet.';
+
+            if (banner && title && text) {
+                if (status.totalRecords > 0 && status.due) {
+                    title.textContent = 'Backup recommended';
+                    text.textContent = `${status.reason} ${rangeText}`;
+                    banner.style.display = 'flex';
+                } else {
+                    banner.style.display = 'none';
+                }
+            }
+
+            if (panel && panelTitle && panelText) {
+                panel.classList.remove('backup-status-warning', 'backup-status-good');
+                if (status.totalRecords > 0 && status.due) panel.classList.add('backup-status-warning');
+                else if (status.totalRecords > 0) panel.classList.add('backup-status-good');
+
+                panelTitle.textContent = status.totalRecords > 0 && status.due ? 'Backup recommended' : 'Backup status';
+                panelText.textContent = `${status.reason} ${backupText} ${rangeText} Storage: ${storageLabel}.`;
+            }
+        }
+
         function updateDatabaseStats() {
             const stats = document.getElementById('databaseStats');
             const totalStudents = Object.keys(db.students).length;
@@ -1981,6 +2501,8 @@
             const grades = getUniqueGrades().length;
             const sections = Array.from(new Set(db.rosters.map(r => `${r.gradeLevel}|${r.section}`))).length;
             const subjects = Array.from(new Set(db.rosters.map(r => r.subject))).length;
+            const range = getAttendanceDateRange();
+            const backupStatus = getBackupStatusInfo();
 
             stats.innerHTML = `
                 <div class="stat-card"><div class="stat-label">Students</div><div class="stat-value">${totalStudents}</div></div>
@@ -1989,6 +2511,9 @@
                 <div class="stat-card"><div class="stat-label">Grade Levels</div><div class="stat-value">${grades}</div></div>
                 <div class="stat-card"><div class="stat-label">Sections</div><div class="stat-value">${sections}</div></div>
                 <div class="stat-card"><div class="stat-label">Subjects</div><div class="stat-value">${subjects}</div></div>
+                <div class="stat-card"><div class="stat-label">First Record</div><div class="stat-value" style="font-size: 18px;">${range.first || '-'}</div></div>
+                <div class="stat-card"><div class="stat-label">Latest Record</div><div class="stat-value" style="font-size: 18px;">${range.latest || '-'}</div></div>
+                <div class="stat-card"><div class="stat-label">Last Backup</div><div class="stat-value" style="font-size: 16px;">${backupStatus.lastBackupAt ? formatDateTime(backupStatus.lastBackupAt) : '-'}</div></div>
             `;
 
             const statusText = document.getElementById('databaseStatusText');
@@ -1999,6 +2524,8 @@
                     statusText.textContent = `${totalStudents} students | ${totalRosters} roster memberships | ${totalRecords} attendance records`;
                 }
             }
+
+            updateBackupSafetyUI();
         }
 
         function updatePreviewFilters(level) {
@@ -2066,6 +2593,7 @@
             renderCards();
             updateRosterSummary();
             updatePreviewFilters('grade');
+            updateBackupSafetyUI();
         }
 
         window.addEventListener('beforeunload', function(e) {
@@ -2075,7 +2603,7 @@
         });
 
 
-        const APP_VERSION = '2026.06.10-pwa2';
+        const APP_VERSION = '2026.06.10-pwa4-indexeddb';
         let pendingServiceWorker = null;
 
         function showPwaUpdateBanner(message, buttonText, clickHandler) {
@@ -2148,11 +2676,21 @@
 
         registerServiceWorker();
 
-        loadDatabase();
-        initializeDateInput();
-        populateDailyFilters();
-        currentContext = getSelectedContext();
-        refreshAllUI();
+        async function initApp() {
+            try {
+                await loadDatabase();
+            } catch (err) {
+                console.error('App database initialization failed:', err);
+                alert('The local database could not be opened. The app will start with an empty database for this session.');
+                db = createEmptyDatabase();
+            }
+            initializeDateInput();
+            populateDailyFilters();
+            currentContext = getSelectedContext();
+            refreshAllUI();
+        }
+
+        initApp();
     </script>
 </body>
 </html>
