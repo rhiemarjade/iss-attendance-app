@@ -1,3 +1,7 @@
+Offline Attendance PWA v6 restore and print fix
+
+This package fixes backup restore so attendance records are restored into IndexedDB, not only students and rosters. It also makes the print preview close automatically after printing or saving as PDF when the browser supports afterprint, with a Close Print Preview fallback button.
+
 Offline Attendance PWA v5, Print Reports and Teacher Guide
 
 Contents:

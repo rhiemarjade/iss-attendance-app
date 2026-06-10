@@ -1,4 +1,4 @@
-const CACHE_NAME = 'offline-attendance-pwa-20260610-v5-print-guide';
+const CACHE_NAME = 'offline-attendance-pwa-20260610-v6-restore-printfix';
 const APP_SHELL = [
   './',
   './index.html',

@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
     <title>Offline Attendance</title>
-    <!-- Offline Attendance PWA v4, IndexedDB database and backup safety -->
+    <!-- Offline Attendance PWA v6, IndexedDB restore and print return fixes -->
     <style>
         :root {
             --primary: #673ab7;
@@ -923,6 +923,74 @@
                 && Object.keys(database.attendance || {}).length === 0;
         }
 
+        function getDatabaseCounts(database) {
+            return {
+                students: Object.keys(database?.students || {}).length,
+                rosters: (database?.rosters || []).length,
+                attendance: Object.keys(database?.attendance || {}).length
+            };
+        }
+
+        function dateTimeValue(value) {
+            const timestamp = Date.parse(value || '');
+            return Number.isNaN(timestamp) ? 0 : timestamp;
+        }
+
+        function preferNewerRecord(existingRecord, incomingRecord) {
+            if (!existingRecord) return incomingRecord;
+            if (!incomingRecord) return existingRecord;
+            return dateTimeValue(incomingRecord.updatedAt) >= dateTimeValue(existingRecord.updatedAt)
+                ? incomingRecord
+                : existingRecord;
+        }
+
+        function mergeDatabases(baseDatabase, incomingDatabase) {
+            const base = normalizeDatabase(baseDatabase || createEmptyDatabase());
+            const incoming = normalizeDatabase(incomingDatabase || createEmptyDatabase());
+            const merged = createEmptyDatabase();
+
+            merged.version = 3;
+            merged.createdAt = dateTimeValue(base.createdAt) && dateTimeValue(incoming.createdAt)
+                ? (dateTimeValue(base.createdAt) <= dateTimeValue(incoming.createdAt) ? base.createdAt : incoming.createdAt)
+                : (base.createdAt || incoming.createdAt || new Date().toISOString());
+            merged.updatedAt = dateTimeValue(base.updatedAt) >= dateTimeValue(incoming.updatedAt)
+                ? (base.updatedAt || new Date().toISOString())
+                : (incoming.updatedAt || new Date().toISOString());
+
+            merged.students = { ...(base.students || {}) };
+            Object.keys(incoming.students || {}).forEach(lrn => {
+                merged.students[lrn] = preferNewerRecord(merged.students[lrn], incoming.students[lrn]);
+            });
+
+            const rosterMap = new Map();
+            [...(base.rosters || []), ...(incoming.rosters || [])].forEach(roster => {
+                const lrn = normalizeLRN(roster.lrn);
+                const gradeLevel = normalizeText(roster.gradeLevel);
+                const section = normalizeText(roster.section);
+                const subject = normalizeText(roster.subject);
+                if (!lrn || !gradeLevel || !section || !subject) return;
+                rosterMap.set(rosterKey(lrn, gradeLevel, section, subject), { lrn, gradeLevel, section, subject });
+            });
+            merged.rosters = Array.from(rosterMap.values());
+
+            merged.attendance = { ...(base.attendance || {}) };
+            Object.keys(incoming.attendance || {}).forEach(key => {
+                const normalized = normalizeAttendanceRecord(incoming.attendance[key]);
+                if (!normalized) return;
+                const attendanceId = attendanceKey(normalized.date, normalized.gradeLevel, normalized.section, normalized.subject, normalized.lrn);
+                merged.attendance[attendanceId] = preferNewerRecord(merged.attendance[attendanceId], normalized);
+            });
+
+            const lastBackupAt = dateTimeValue(incoming.settings?.lastBackupAt) >= dateTimeValue(base.settings?.lastBackupAt)
+                ? incoming.settings?.lastBackupAt
+                : base.settings?.lastBackupAt;
+            merged.settings = { ...(base.settings || {}), ...(incoming.settings || {}) };
+            merged.settings.lastBackupAt = lastBackupAt || merged.settings.lastBackupAt || '';
+            merged.metadata = { ...(base.metadata || {}), ...(incoming.metadata || {}) };
+            merged.metadata.storageEngine = storageMode === 'indexeddb' ? 'IndexedDB' : 'localStorage fallback';
+            return normalizeDatabase(merged);
+        }
+
         function idbRequest(request) {
             return new Promise((resolve, reject) => {
                 request.onsuccess = () => resolve(request.result);
@@ -1105,17 +1173,23 @@
             }
 
             const localStorageData = localStorage.getItem(DB_KEY);
-            if (isDatabaseEmpty(db) && localStorageData) {
+            if (localStorageData) {
                 try {
                     const parsed = JSON.parse(localStorageData);
-                    db = normalizeDatabase(parsed);
-                    db.metadata.migratedFromLocalStorageAt = new Date().toISOString();
-                    db.settings.storageMode = storageMode;
-                    db.metadata.storageEngine = storageMode === 'indexeddb' ? 'IndexedDB' : 'localStorage fallback';
-                    await saveDatabase({ skipRefresh: true });
+                    const localDatabase = normalizeDatabase(parsed);
+                    if (!isDatabaseEmpty(localDatabase)) {
+                        const beforeCounts = getDatabaseCounts(db);
+                        db = mergeDatabases(db, localDatabase);
+                        const afterCounts = getDatabaseCounts(db);
+                        db.metadata.migratedFromLocalStorageAt = db.metadata.migratedFromLocalStorageAt || new Date().toISOString();
+                        db.metadata.localStorageRescue = {
+                            rescuedAt: new Date().toISOString(),
+                            indexedDbCountsBefore: beforeCounts,
+                            mergedCountsAfter: afterCounts
+                        };
+                    }
                 } catch (err) {
-                    console.warn('Legacy localStorage database could not be migrated:', err);
-                    db = createEmptyDatabase();
+                    console.warn('Legacy localStorage database could not be migrated or merged:', err);
                 }
             }
 
@@ -1256,66 +1330,6 @@
 
         setInterval(updateClock, 1000);
         updateClock();
-
-        function loadDatabase() {
-            const saved = localStorage.getItem(DB_KEY);
-            if (!saved) {
-                db = createEmptyDatabase();
-                return;
-            }
-
-            try {
-                const parsed = JSON.parse(saved);
-                db = normalizeDatabase(parsed);
-            } catch (err) {
-                alert('The saved database could not be read. A new empty database will be started. Your browser may still contain the old corrupted data.');
-                db = createEmptyDatabase();
-            }
-        }
-
-        function normalizeDatabase(input) {
-            const clean = createEmptyDatabase();
-            clean.version = 2;
-            clean.createdAt = input.createdAt || new Date().toISOString();
-            clean.updatedAt = input.updatedAt || new Date().toISOString();
-            clean.students = input.students && typeof input.students === 'object' ? input.students : {};
-            clean.rosters = Array.isArray(input.rosters) ? input.rosters : [];
-            clean.attendance = input.attendance && typeof input.attendance === 'object' ? input.attendance : {};
-
-            const normalizedStudents = {};
-            Object.keys(clean.students).forEach(lrn => {
-                const s = clean.students[lrn];
-                const cleanLRN = normalizeLRN(s.lrn || lrn);
-                if (!cleanLRN) return;
-                normalizedStudents[cleanLRN] = {
-                    lrn: cleanLRN,
-                    name: normalizeName(s.name || s.completeName || ''),
-                    gender: normalizeGender(s.gender),
-                    updatedAt: s.updatedAt || clean.updatedAt
-                };
-            });
-            clean.students = normalizedStudents;
-
-            const rosterMap = new Map();
-            clean.rosters.forEach(r => {
-                const lrn = normalizeLRN(r.lrn);
-                const gradeLevel = normalizeText(r.gradeLevel || r.grade || r['Grade Level']);
-                const section = normalizeText(r.section || r.Section);
-                const subject = normalizeText(r.subject || r.Subject);
-                if (!lrn || !gradeLevel || !section || !subject) return;
-                const key = rosterKey(lrn, gradeLevel, section, subject);
-                rosterMap.set(key, { lrn, gradeLevel, section, subject });
-            });
-            clean.rosters = Array.from(rosterMap.values());
-
-            return clean;
-        }
-
-        function saveDatabase() {
-            db.updatedAt = new Date().toISOString();
-            localStorage.setItem(DB_KEY, JSON.stringify(db));
-            refreshAllUI();
-        }
 
         function normalizeText(value) {
             return String(value ?? '').trim().replace(/\s+/g, ' ');
@@ -2459,6 +2473,8 @@
 <title>${escapeHTML(reportTitle)}</title>
 <style>
     body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+    .print-toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+    .print-toolbar button { border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 700; cursor: pointer; background: #673ab7; color: white; }
     h1 { text-align: center; margin: 0 0 6px; font-size: 18px; }
     .subtitle { text-align: center; margin-bottom: 18px; font-size: 12px; color: #444; }
     .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px; margin-bottom: 14px; font-size: 12px; }
@@ -2471,10 +2487,16 @@
     .footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 32px; font-size: 12px; }
     .signature { width: 260px; text-align: center; border-top: 1px solid #111; padding-top: 6px; }
     @page { size: A4 landscape; margin: 12mm; }
-    @media print { body { margin: 0; } }
+    @media print { body { margin: 0; } .print-toolbar { display: none; } }
 </style>
+<script>
+    window.addEventListener('afterprint', function() {
+        setTimeout(function() { window.close(); }, 300);
+    });
+<\/script>
 </head>
 <body>
+    <div class="print-toolbar"><button type="button" onclick="window.close()">Close Print Preview</button></div>
     <h1>${escapeHTML(reportTitle)}</h1>
     <div class="subtitle">Offline Attendance PWA</div>
     <div class="meta">
@@ -2509,6 +2531,12 @@
             printWindow.document.write(printHTML);
             printWindow.document.close();
             printWindow.focus();
+            printWindow.onafterprint = function() {
+                setTimeout(function() {
+                    try { printWindow.close(); } catch (err) { console.warn('Print window could not be closed automatically:', err); }
+                    window.focus();
+                }, 300);
+            };
             setTimeout(() => printWindow.print(), 300);
         }
 
@@ -2889,7 +2917,7 @@
         });
 
 
-        const APP_VERSION = '2026.06.10-pwa5-print-guide';
+        const APP_VERSION = '2026.06.10-pwa6-restore-printfix';
         let pendingServiceWorker = null;
 
         function showPwaUpdateBanner(message, buttonText, clickHandler) {
