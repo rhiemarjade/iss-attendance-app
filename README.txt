@@ -36,3 +36,7 @@ LRN,Complete Name,Gender,Grade Level,Section,Subject
 Current attendance key logic:
 
 Date + Grade Level + Section + Subject + LRN
+
+
+UPDATE NOTE v3:
+This version fixes the report CSV header so monthly exports include a Month row immediately after Subject. Replace index.html and service-worker.js on GitHub, then open the app online and tap Refresh App if the update banner appears.
