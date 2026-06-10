@@ -1,4 +1,4 @@
-Offline Attendance PWA v6 restore and print fix
+Offline Attendance PWA v7 restore and print fix
 
 This package fixes backup restore so attendance records are restored into IndexedDB, not only students and rosters. It also makes the print preview close automatically after printing or saving as PDF when the browser supports afterprint, with a Close Print Preview fallback button.
 
@@ -32,3 +32,6 @@ GitHub Pages upload steps:
 
 Tablet reminder:
 This app stores attendance records locally on the device using IndexedDB. Clearing website data in Safari or Chrome can delete the local database. Use Backup Now regularly and keep the JSON backup in a safe location.
+
+
+Version 7 note: Print Report now prints summary columns only. Full date-by-date records remain available through Export CSV.
