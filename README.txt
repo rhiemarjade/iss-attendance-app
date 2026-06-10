@@ -1,48 +1,30 @@
-Offline Attendance PWA v4, IndexedDB Database Version
+Offline Attendance PWA v5, Print Reports and Teacher Guide
 
-Files included:
+Contents:
+- index.html
+- manifest.json
+- service-worker.js
+- icons/icon-192.png
+- icons/icon-512.png
+- icons/maskable-512.png
+- icons/apple-touch-icon.png
 
-index.html
-manifest.json
-service-worker.js
-icons/icon-192.png
-icons/icon-512.png
-icons/maskable-512.png
-icons/apple-touch-icon.png
+What is new in v5:
+1. Print Report button added to the Reports tab.
+2. Print layout opens a clean report page that can be printed or saved as PDF.
+3. Printed reports include title, grade level, section, subject, month/date range, summary counts, date printed, app version, and prepared by line.
+4. Database tab now shows app version, database mode, last backup, and latest attendance record.
+5. Teacher Quick Guide added inside the Database tab.
+6. Service worker cache version updated so tablets can detect the new app version.
 
-Main changes in this version:
-
-1. The tablet local database now uses IndexedDB as the main storage engine.
-2. Existing localStorage data from the previous PWA version is migrated automatically on first load.
-3. The app keeps the same LRN-based attendance logic:
-   Date + Grade Level + Section + Subject + LRN.
-4. The Database tab now shows the last backup date clearly.
-5. A weekly backup reminder appears when records exist and the backup is old or missing.
-6. A backup warning appears when records exist but are not fully backed up.
-7. Backup Now exports the full local database in one tap.
-8. Restore Database checks and verifies the restored data before confirming success.
-9. Monthly CSV reports still include the Month row after Subject.
-
-GitHub Pages update guide:
-
+GitHub Pages upload steps:
 1. Extract this package.
-2. Replace the files in your GitHub repository with the extracted contents.
-3. Make sure index.html, manifest.json, service-worker.js, README.txt, and the icons folder are at the repository root.
+2. Upload all extracted files to the root of your GitHub repository.
+3. Make sure index.html, manifest.json, service-worker.js, README.txt, and the icons folder are all at the repository root.
 4. Commit the changes.
-5. Open the GitHub Pages link online.
-6. If the installed app shows an update banner, tap Refresh App.
-7. If the old version still appears, remove the Home Screen app, reopen the GitHub Pages link, then add it to Home Screen again.
+5. Open the GitHub Pages link while online.
+6. Tap Refresh App if the update banner appears.
+7. Test CSV import, attendance saving, report export, print report, backup, and restore.
 
-Important backup reminder:
-
-The app stores records on the tablet device. IndexedDB is safer and more structured than localStorage, but clearing browser website data can still delete the local database. Use Backup Now regularly and before clearing browser data, changing devices, or updating the app.
-
-Recommended teacher routine:
-
-Use Backup Now every Friday.
-Save the backup file to Files, Google Drive, USB, or a computer folder.
-Use Restore Database when moving records to another device.
-
-Current CSV roster format:
-
-LRN,Complete Name,Gender,Grade Level,Section,Subject
+Tablet reminder:
+This app stores attendance records locally on the device using IndexedDB. Clearing website data in Safari or Chrome can delete the local database. Use Backup Now regularly and keep the JSON backup in a safe location.

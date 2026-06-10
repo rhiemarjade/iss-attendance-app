@@ -1,4 +1,4 @@
-const CACHE_NAME = 'offline-attendance-pwa-20260610-v4-indexeddb';
+const CACHE_NAME = 'offline-attendance-pwa-20260610-v5-print-guide';
 const APP_SHELL = [
   './',
   './index.html',

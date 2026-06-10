@@ -549,6 +549,32 @@
             color: #1b5e20;
         }
 
+
+
+        .guide-list {
+            margin: 0;
+            padding-left: 22px;
+            color: var(--text);
+            line-height: 1.55;
+        }
+
+        .guide-list li {
+            margin-bottom: 8px;
+        }
+
+        .guide-list strong {
+            color: #333;
+        }
+
+        .report-print-button {
+            align-self: flex-end;
+            white-space: nowrap;
+        }
+
+        .print-summary-line {
+            display: none;
+        }
+
         @media (display-mode: standalone) {
             body {
                 padding-top: max(20px, env(safe-area-inset-top));
@@ -707,6 +733,7 @@
             </div>
 
             <div class="toolbar-spacer" aria-hidden="true"></div>
+            <button class="btn-blue report-print-button" onclick="printReport()">Print Report</button>
             <button class="btn-green report-export-button" onclick="exportReportCSV()">Export CSV</button>
         </div>
 
@@ -718,6 +745,16 @@
     </div>
 
     <div id="view-database" style="display: none;">
+        <div class="panel">
+            <h2>App Information</h2>
+            <div class="stats-grid" id="appInfoStats">
+                <div class="stat-card"><div class="stat-label">App Version</div><div class="stat-value" style="font-size: 16px;">Loading...</div></div>
+            </div>
+            <div class="note-box">
+                This tablet version stores records on this device. Use Backup Now regularly, especially before clearing browser data, updating the device, or moving to another tablet.
+            </div>
+        </div>
+
         <div class="panel">
             <h2>Roster Database</h2>
             <p>Import a clean ISS export with these columns: <strong>LRN, Complete Name, Gender, Grade Level, Section, Subject</strong>. The app uses LRN as the student identity and treats Grade Level + Section + Subject as the class roster.</p>
@@ -753,6 +790,19 @@
                 <input type="file" id="restoreUpload" accept=".json,application/json">
                 <button class="btn-red" onclick="clearDatabase()">Delete Database</button>
             </div>
+        </div>
+
+        <div class="panel">
+            <h2>Teacher Quick Guide</h2>
+            <ol class="guide-list">
+                <li><strong>Install once while online.</strong> Open the GitHub Pages link, then add the app to the tablet Home Screen.</li>
+                <li><strong>Import the ISS roster CSV.</strong> Use the format LRN, Complete Name, Gender, Grade Level, Section, Subject.</li>
+                <li><strong>Record attendance by class.</strong> Select the date, grade level, section, and subject before marking learners.</li>
+                <li><strong>Saved records are locked.</strong> Unlock editing only when you intentionally need to correct a saved record.</li>
+                <li><strong>Back up weekly.</strong> Tap Backup Now and save the JSON file in Files, Google Drive, or a computer folder.</li>
+                <li><strong>Do not clear website data without a backup.</strong> Clearing Safari or Chrome site data can delete the local tablet database.</li>
+                <li><strong>Restore before using a new device.</strong> Use the latest JSON backup to bring back students, rosters, and attendance records.</li>
+            </ol>
         </div>
 
         <div class="panel">
@@ -1206,6 +1256,66 @@
 
         setInterval(updateClock, 1000);
         updateClock();
+
+        function loadDatabase() {
+            const saved = localStorage.getItem(DB_KEY);
+            if (!saved) {
+                db = createEmptyDatabase();
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(saved);
+                db = normalizeDatabase(parsed);
+            } catch (err) {
+                alert('The saved database could not be read. A new empty database will be started. Your browser may still contain the old corrupted data.');
+                db = createEmptyDatabase();
+            }
+        }
+
+        function normalizeDatabase(input) {
+            const clean = createEmptyDatabase();
+            clean.version = 2;
+            clean.createdAt = input.createdAt || new Date().toISOString();
+            clean.updatedAt = input.updatedAt || new Date().toISOString();
+            clean.students = input.students && typeof input.students === 'object' ? input.students : {};
+            clean.rosters = Array.isArray(input.rosters) ? input.rosters : [];
+            clean.attendance = input.attendance && typeof input.attendance === 'object' ? input.attendance : {};
+
+            const normalizedStudents = {};
+            Object.keys(clean.students).forEach(lrn => {
+                const s = clean.students[lrn];
+                const cleanLRN = normalizeLRN(s.lrn || lrn);
+                if (!cleanLRN) return;
+                normalizedStudents[cleanLRN] = {
+                    lrn: cleanLRN,
+                    name: normalizeName(s.name || s.completeName || ''),
+                    gender: normalizeGender(s.gender),
+                    updatedAt: s.updatedAt || clean.updatedAt
+                };
+            });
+            clean.students = normalizedStudents;
+
+            const rosterMap = new Map();
+            clean.rosters.forEach(r => {
+                const lrn = normalizeLRN(r.lrn);
+                const gradeLevel = normalizeText(r.gradeLevel || r.grade || r['Grade Level']);
+                const section = normalizeText(r.section || r.Section);
+                const subject = normalizeText(r.subject || r.Subject);
+                if (!lrn || !gradeLevel || !section || !subject) return;
+                const key = rosterKey(lrn, gradeLevel, section, subject);
+                rosterMap.set(key, { lrn, gradeLevel, section, subject });
+            });
+            clean.rosters = Array.from(rosterMap.values());
+
+            return clean;
+        }
+
+        function saveDatabase() {
+            db.updatedAt = new Date().toISOString();
+            localStorage.setItem(DB_KEY, JSON.stringify(db));
+            refreshAllUI();
+        }
 
         function normalizeText(value) {
             return String(value ?? '').trim().replace(/\s+/g, ' ');
@@ -2243,6 +2353,165 @@
             downloadBlob(csv, `Attendance_Report_${safeContext}${fileSuffix}.csv`, 'text/csv;charset=utf-8;');
         }
 
+
+        function getPrintableReportTitle() {
+            const isIndividual = document.getElementById('modeIndividual').checked;
+            const isCustom = document.getElementById('modeCustom').checked;
+            if (isIndividual) return 'Individual Attendance Report';
+            return isCustom ? 'Custom Attendance Report' : 'Monthly Attendance Report';
+        }
+
+        function getReportSummaryForPrint() {
+            const table = document.getElementById('reportTable');
+            const isIndividual = document.getElementById('modeIndividual').checked;
+            const result = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0 };
+
+            if (!table || table.rows.length === 0) return result;
+
+            if (isIndividual) {
+                for (let i = 1; i < table.rows.length; i++) {
+                    const status = (table.rows[i].cells[1]?.innerText || '').trim();
+                    if (result[status] !== undefined) result[status]++;
+                    else result.Unmarked++;
+                }
+                return result;
+            }
+
+            const header = table.rows[0];
+            if (!header) return result;
+            const indexByName = {};
+            for (let i = 0; i < header.cells.length; i++) {
+                indexByName[(header.cells[i].innerText || '').trim()] = i;
+            }
+
+            ['Present', 'Absent', 'Late', 'Excused', 'Unmarked'].forEach(label => {
+                const idx = indexByName[label];
+                if (idx === undefined) return;
+                for (let rowIndex = 1; rowIndex < table.rows.length; rowIndex++) {
+                    const value = parseInt((table.rows[rowIndex].cells[idx]?.innerText || '0').trim(), 10);
+                    if (!Number.isNaN(value)) result[label] += value;
+                }
+            });
+
+            return result;
+        }
+
+        function getTableHTMLForPrint(table) {
+            let html = '<table><thead>';
+            if (table.rows.length > 0) {
+                html += '<tr>';
+                for (let i = 0; i < table.rows[0].cells.length; i++) {
+                    html += `<th>${escapeHTML(table.rows[0].cells[i].innerText)}</th>`;
+                }
+                html += '</tr>';
+            }
+            html += '</thead><tbody>';
+            for (let r = 1; r < table.rows.length; r++) {
+                html += '<tr>';
+                for (let c = 0; c < table.rows[r].cells.length; c++) {
+                    html += `<td>${escapeHTML(table.rows[r].cells[c].innerText)}</td>`;
+                }
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            return html;
+        }
+
+        function printReport() {
+            const table = document.getElementById('reportTable');
+            if (!table || table.rows.length === 0) {
+                alert('Please generate a report first.');
+                return;
+            }
+
+            const ctx = getReportContext();
+            if (!ctx.gradeLevel || !ctx.section || !ctx.subject) {
+                alert('Please select grade level, section, and subject first.');
+                return;
+            }
+
+            const periodLabel = getSelectedReportPeriodLabel();
+            if (!periodLabel) {
+                alert('Please select a month or date range first.');
+                return;
+            }
+
+            const isCustom = document.getElementById('modeCustom').checked;
+            const isIndividual = document.getElementById('modeIndividual').checked;
+            const periodName = isCustom ? 'Date Range' : 'Month';
+            const studentLrn = document.getElementById('reportStudentSelect').value;
+            const student = studentLrn ? db.students[studentLrn] : null;
+            const summary = getReportSummaryForPrint();
+            const printedAt = new Date().toLocaleString();
+            const reportTitle = getPrintableReportTitle();
+            const tableHTML = getTableHTMLForPrint(table);
+
+            const studentRows = isIndividual ? `
+                <div><strong>Student:</strong> ${escapeHTML(student ? student.name : '')}</div>
+                <div><strong>LRN:</strong> ${escapeHTML(studentLrn)}</div>
+            ` : '';
+
+            const printHTML = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHTML(reportTitle)}</title>
+<style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+    h1 { text-align: center; margin: 0 0 6px; font-size: 18px; }
+    .subtitle { text-align: center; margin-bottom: 18px; font-size: 12px; color: #444; }
+    .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px; margin-bottom: 14px; font-size: 12px; }
+    .summary { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0 16px; font-size: 12px; }
+    .summary span { border: 1px solid #ccc; padding: 5px 8px; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th, td { border: 1px solid #444; padding: 5px; text-align: center; white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; white-space: normal; min-width: 180px; }
+    th { background: #f2f2f2; }
+    .footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 32px; font-size: 12px; }
+    .signature { width: 260px; text-align: center; border-top: 1px solid #111; padding-top: 6px; }
+    @page { size: A4 landscape; margin: 12mm; }
+    @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+    <h1>${escapeHTML(reportTitle)}</h1>
+    <div class="subtitle">Offline Attendance PWA</div>
+    <div class="meta">
+        <div><strong>Grade Level:</strong> ${escapeHTML(ctx.gradeLevel)}</div>
+        <div><strong>Section:</strong> ${escapeHTML(ctx.section)}</div>
+        <div><strong>Subject:</strong> ${escapeHTML(ctx.subject)}</div>
+        <div><strong>${escapeHTML(periodName)}:</strong> ${escapeHTML(periodLabel)}</div>
+        ${studentRows}
+        <div><strong>Date Printed:</strong> ${escapeHTML(printedAt)}</div>
+    </div>
+    <div class="summary">
+        <span>Present: ${summary.Present}</span>
+        <span>Absent: ${summary.Absent}</span>
+        <span>Late: ${summary.Late}</span>
+        <span>Excused: ${summary.Excused}</span>
+        <span>Unmarked: ${summary.Unmarked}</span>
+    </div>
+    ${tableHTML}
+    <div class="footer">
+        <div>Generated by Offline Attendance PWA ${escapeHTML(APP_VERSION)}</div>
+        <div class="signature">Prepared by / Teacher</div>
+    </div>
+</body>
+</html>`;
+
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                alert('The print window was blocked. Please allow pop-ups for this app, then try again.');
+                return;
+            }
+            printWindow.document.open();
+            printWindow.document.write(printHTML);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => printWindow.print(), 300);
+        }
+
         function exportRosterCSV() {
             if (db.rosters.length === 0) {
                 alert('No roster data to export.');
@@ -2493,6 +2762,22 @@
             }
         }
 
+
+        function updateAppInfoStats() {
+            const container = document.getElementById('appInfoStats');
+            if (!container) return;
+            const backupStatus = getBackupStatusInfo();
+            const storageLabel = storageMode === 'indexeddb' ? 'IndexedDB' : 'localStorage fallback';
+            const lastBackup = backupStatus.lastBackupAt ? formatDateTime(backupStatus.lastBackupAt) : 'No backup yet';
+            const latestRecord = backupStatus.range.latest || '-';
+            container.innerHTML = `
+                <div class="stat-card"><div class="stat-label">App Version</div><div class="stat-value" style="font-size: 16px;">${APP_VERSION}</div></div>
+                <div class="stat-card"><div class="stat-label">Local Database</div><div class="stat-value" style="font-size: 16px;">${storageLabel}</div></div>
+                <div class="stat-card"><div class="stat-label">Last Backup</div><div class="stat-value" style="font-size: 16px;">${lastBackup}</div></div>
+                <div class="stat-card"><div class="stat-label">Latest Record</div><div class="stat-value" style="font-size: 16px;">${latestRecord}</div></div>
+            `;
+        }
+
         function updateDatabaseStats() {
             const stats = document.getElementById('databaseStats');
             const totalStudents = Object.keys(db.students).length;
@@ -2586,6 +2871,7 @@
         }
 
         function refreshAllUI() {
+            updateAppInfoStats();
             updateDatabaseStats();
             populateDailyFilters(getSelectedContext());
             prepareReportFilters();
@@ -2603,7 +2889,7 @@
         });
 
 
-        const APP_VERSION = '2026.06.10-pwa4-indexeddb';
+        const APP_VERSION = '2026.06.10-pwa5-print-guide';
         let pendingServiceWorker = null;
 
         function showPwaUpdateBanner(message, buttonText, clickHandler) {
