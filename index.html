@@ -283,6 +283,9 @@
         .status-Absent { background: #ffebee; border-color: var(--red); }
         .status-Late { background: #e3f2fd; border-color: var(--blue); }
         .status-Excused { background: #f5f5f5; border-color: var(--gray); }
+        .status-NotYetEnrolled { background: #fff8e1; border-color: #f9a825; color: #6d4c00; }
+        .card.not-enrolled { cursor: not-allowed; opacity: .88; }
+        .cell-NYE { color: #795548; font-weight: bold; }
 
         .modal-overlay {
             display: none;
@@ -757,7 +760,7 @@
 
         <div class="panel">
             <h2>Roster Database</h2>
-            <p>Import a clean ISS export with these columns: <strong>LRN, Complete Name, Gender, Grade Level, Section, Subject</strong>. The app uses LRN as the student identity and treats Grade Level + Section + Subject as the class roster.</p>
+            <p>Import a clean ISS export with these columns: <strong>LRN, Complete Name, Gender, Grade Level, Section, Subject</strong>. An optional <strong>Enrollment Date</strong> column may be included for late enrollees. The app uses LRN as the student identity and treats Grade Level + Section + Subject as the class roster.</p>
             <div class="stats-grid" id="databaseStats"></div>
             <div class="note-box">
                 Attendance is saved by Date + Grade Level + Section + Subject + LRN. This prevents Mathematics attendance from overwriting Science or English attendance for the same section.
@@ -766,7 +769,7 @@
 
         <div class="panel">
             <h2>Import from ISS CSV</h2>
-            <p>The import merges new students and roster memberships. Existing attendance records are kept.</p>
+            <p>The import merges new students and roster memberships. Existing attendance records are kept. If Enrollment Date is blank, the learner is treated as enrolled for all dates.</p>
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                 <button class="btn-gray" onclick="downloadTemplate()">Get Template</button>
                 <input type="file" id="csvUpload" accept=".csv,text/csv">
@@ -845,6 +848,9 @@
             <input type="text" id="newStudentSection" placeholder="Example: JUPITER">
             <label class="small-label">Subject</label>
             <input type="text" id="newStudentSubject" placeholder="Example: Mathematics">
+            <label class="small-label">Enrollment Date</label>
+            <input type="date" id="newStudentEnrollmentDate">
+            <div style="font-size: 12px; color: #666; line-height: 1.35; margin-top: -4px;">For earlier attendance dates, this learner will be shown as Not Yet Enrolled.</div>
             <div class="modal-buttons">
                 <button class="btn-gray" onclick="closeAddRosterModal()">Cancel</button>
                 <button class="btn-green" onclick="saveNewRosterEntry()">Save</button>
@@ -877,7 +883,8 @@
         const IDB_VERSION = 1;
         const BACKUP_REMINDER_DAYS = 7;
         const LEGACY_KEYS = ['savedStudentRoster', 'sectionSchedule'];
-        const STATUS_VALUES = ['Unmarked', 'Present', 'Absent', 'Late', 'Excused'];
+        const STATUS_VALUES = ['Unmarked', 'Present', 'Absent', 'Late', 'Excused', 'Not Yet Enrolled'];
+        const NOT_YET_ENROLLED = 'Not Yet Enrolled';
 
         let db = createEmptyDatabase();
         let currentMode = 'Absent';
@@ -968,8 +975,11 @@
                 const gradeLevel = normalizeText(roster.gradeLevel);
                 const section = normalizeText(roster.section);
                 const subject = normalizeText(roster.subject);
+                const enrollmentDate = normalizeEnrollmentDate(roster.enrollmentDate || roster.enrolledAt || roster['Enrollment Date']);
                 if (!lrn || !gradeLevel || !section || !subject) return;
-                rosterMap.set(rosterKey(lrn, gradeLevel, section, subject), { lrn, gradeLevel, section, subject });
+                const key = rosterKey(lrn, gradeLevel, section, subject);
+                const existing = rosterMap.get(key);
+                rosterMap.set(key, { lrn, gradeLevel, section, subject, enrollmentDate: pickEnrollmentDate(existing?.enrollmentDate, enrollmentDate) });
             });
             merged.rosters = Array.from(rosterMap.values());
 
@@ -1075,9 +1085,10 @@
                 const gradeLevel = normalizeText(record.gradeLevel);
                 const section = normalizeText(record.section);
                 const subject = normalizeText(record.subject);
+                const enrollmentDate = normalizeEnrollmentDate(record.enrollmentDate || record.enrolledAt || record['Enrollment Date']);
                 if (!lrn || !gradeLevel || !section || !subject) return;
                 const key = rosterKey(lrn, gradeLevel, section, subject);
-                rosterMap.set(key, { lrn, gradeLevel, section, subject });
+                rosterMap.set(key, { lrn, gradeLevel, section, subject, enrollmentDate });
             });
             clean.rosters = Array.from(rosterMap.values());
 
@@ -1258,9 +1269,11 @@
                 const gradeLevel = normalizeText(r.gradeLevel || r.grade || r['Grade Level']);
                 const section = normalizeText(r.section || r.Section);
                 const subject = normalizeText(r.subject || r.Subject);
+                const enrollmentDate = normalizeEnrollmentDate(r.enrollmentDate || r.enrolledAt || r['Enrollment Date']);
                 if (!lrn || !gradeLevel || !section || !subject) return;
                 const key = rosterKey(lrn, gradeLevel, section, subject);
-                rosterMap.set(key, { lrn, gradeLevel, section, subject });
+                const existing = rosterMap.get(key);
+                rosterMap.set(key, { lrn, gradeLevel, section, subject, enrollmentDate: pickEnrollmentDate(existing?.enrollmentDate, enrollmentDate) });
             });
             clean.rosters = Array.from(rosterMap.values());
 
@@ -1333,6 +1346,41 @@
 
         function normalizeText(value) {
             return String(value ?? '').trim().replace(/\s+/g, ' ');
+        }
+
+        function normalizeEnrollmentDate(value) {
+            const text = normalizeText(value);
+            if (!text) return '';
+            if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+            const slash = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+            if (slash) {
+                const mm = String(parseInt(slash[1], 10)).padStart(2, '0');
+                const dd = String(parseInt(slash[2], 10)).padStart(2, '0');
+                const yyyy = slash[3];
+                return `${yyyy}-${mm}-${dd}`;
+            }
+            const parsed = new Date(text);
+            if (!Number.isNaN(parsed.getTime())) {
+                const yyyy = parsed.getFullYear();
+                const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+                const dd = String(parsed.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            }
+            return '';
+        }
+
+        function pickEnrollmentDate(existingDate, incomingDate) {
+            const existing = normalizeEnrollmentDate(existingDate);
+            const incoming = normalizeEnrollmentDate(incomingDate);
+            if (existing && incoming) return existing <= incoming ? existing : incoming;
+            return incoming || existing || '';
+        }
+
+        function formatShortDate(value) {
+            const clean = normalizeEnrollmentDate(value);
+            if (!clean) return '';
+            const [y, m, d] = clean.split('-');
+            return `${m}/${d}/${y}`;
         }
 
         function normalizeName(value) {
@@ -1451,6 +1499,22 @@
             return r.gradeLevel === gradeLevel && r.section === section && r.subject === subject;
         }
 
+        function getRosterEntryForStudent(ctx, lrn) {
+            if (!ctx || !lrn) return null;
+            return db.rosters.find(r => r.lrn === lrn && sameRosterContext(r, ctx.gradeLevel, ctx.section, ctx.subject)) || null;
+        }
+
+        function isRosterEntryEnrolledOn(roster, date) {
+            if (!roster) return true;
+            const enrollmentDate = normalizeEnrollmentDate(roster.enrollmentDate);
+            if (!enrollmentDate || !date) return true;
+            return date >= enrollmentDate;
+        }
+
+        function isStudentEnrolledOn(ctx, lrn) {
+            return isRosterEntryEnrolledOn(getRosterEntryForStudent(ctx, lrn), ctx?.date || '');
+        }
+
         function getTodayString() {
             const today = new Date();
             const yyyy = today.getFullYear();
@@ -1561,23 +1625,37 @@
         function getCurrentRosterStudents() {
             const ctx = getSelectedContext();
             if (!ctx.gradeLevel || !ctx.section || !ctx.subject) return [];
-            const lrns = db.rosters
+            const rosterByLRN = new Map();
+            db.rosters
                 .filter(r => sameRosterContext(r, ctx.gradeLevel, ctx.section, ctx.subject))
-                .map(r => r.lrn);
-            const uniqueLRNs = Array.from(new Set(lrns));
-            const studentObjects = uniqueLRNs.map(lrn => db.students[lrn]).filter(Boolean);
+                .forEach(r => {
+                    const existing = rosterByLRN.get(r.lrn);
+                    rosterByLRN.set(r.lrn, { ...r, enrollmentDate: pickEnrollmentDate(existing?.enrollmentDate, r.enrollmentDate) });
+                });
+            const studentObjects = Array.from(rosterByLRN.entries())
+                .map(([lrn, roster]) => {
+                    const student = db.students[lrn];
+                    return student ? { ...student, enrollmentDate: roster.enrollmentDate || '' } : null;
+                })
+                .filter(Boolean);
             return sortStudentObjects(studentObjects);
         }
 
         function getSavedStatus(ctx, lrn) {
+            if (!isStudentEnrolledOn(ctx, lrn)) return NOT_YET_ENROLLED;
             const key = attendanceKey(ctx.date, ctx.gradeLevel, ctx.section, ctx.subject, lrn);
             const record = db.attendance[key];
             return record ? record.status : 'Unmarked';
         }
 
         function getDraftOrSavedStatus(ctx, lrn) {
+            if (!isStudentEnrolledOn(ctx, lrn)) return NOT_YET_ENROLLED;
             if (Object.prototype.hasOwnProperty.call(draftAttendance, lrn)) return draftAttendance[lrn];
             return getSavedStatus(ctx, lrn);
+        }
+
+        function statusCardClass(status) {
+            return status === NOT_YET_ENROLLED ? 'status-NotYetEnrolled' : `status-${status}`;
         }
 
         function renderCards() {
@@ -1607,8 +1685,10 @@
 
             rosterStudents.forEach(student => {
                 const status = getDraftOrSavedStatus(ctx, student.lrn);
+                const notYetEnrolled = status === NOT_YET_ENROLLED;
                 const card = document.createElement('div');
-                card.className = `card status-${status}`;
+                card.className = `card ${statusCardClass(status)}`;
+                if (notYetEnrolled) card.classList.add('not-enrolled');
 
                 const name = document.createElement('div');
                 name.className = 'card-name';
@@ -1621,12 +1701,17 @@
                 const statusText = document.createElement('div');
                 statusText.className = 'card-status';
                 statusText.textContent = status;
+                if (notYetEnrolled && student.enrollmentDate) {
+                    statusText.textContent = `Not Yet Enrolled until ${formatShortDate(student.enrollmentDate)}`;
+                }
 
                 card.appendChild(name);
                 card.appendChild(lrn);
                 card.appendChild(statusText);
 
-                if (attendanceLocked) {
+                if (notYetEnrolled) {
+                    card.title = 'This learner is not yet enrolled on the selected date.';
+                } else if (attendanceLocked) {
                     card.classList.add('locked');
                     card.title = 'Saved record is locked. Click Unlock Editing to make changes.';
                 } else {
@@ -1659,7 +1744,7 @@
                 return;
             }
 
-            const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0 };
+            const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0, [NOT_YET_ENROLLED]: 0 };
             let males = 0;
             let females = 0;
 
@@ -1671,7 +1756,7 @@
             });
 
             bar.style.display = 'flex';
-            text.textContent = `${ctx.gradeLevel} ${ctx.section} | ${ctx.subject} | Male: ${males} | Female: ${females} | Total: ${students.length} | P: ${counts.Present} | A: ${counts.Absent} | L: ${counts.Late} | E: ${counts.Excused} | Unmarked: ${counts.Unmarked}`;
+            text.textContent = `${ctx.gradeLevel} ${ctx.section} | ${ctx.subject} | Male: ${males} | Female: ${females} | Total: ${students.length} | P: ${counts.Present} | A: ${counts.Absent} | L: ${counts.Late} | E: ${counts.Excused} | NYE: ${counts[NOT_YET_ENROLLED]} | Unmarked: ${counts.Unmarked}`;
         }
 
         function setMode(mode) {
@@ -1690,7 +1775,7 @@
                 return;
             }
             rosterStudents.forEach(student => {
-                draftAttendance[student.lrn] = status;
+                if (isStudentEnrolledOn(getSelectedContext(), student.lrn)) draftAttendance[student.lrn] = status;
             });
             setUnsavedChanges(true);
             renderCards();
@@ -1703,7 +1788,7 @@
             if (rosterStudents.length === 0) return;
             if (!confirm('Clear the unsaved marks on the visible roster? Saved records will remain unchanged until you save again.')) return;
             rosterStudents.forEach(student => {
-                draftAttendance[student.lrn] = 'Unmarked';
+                if (isStudentEnrolledOn(getSelectedContext(), student.lrn)) draftAttendance[student.lrn] = 'Unmarked';
             });
             setUnsavedChanges(true);
             renderCards();
@@ -1866,6 +1951,7 @@
             const idxGrade = headerIndex(headers, ['Grade Level', 'Grade']);
             const idxSection = headerIndex(headers, ['Section']);
             const idxSubject = headerIndex(headers, ['Subject', 'Learning Area']);
+            const idxEnrollment = headerIndex(headers, ['Enrollment Date', 'Date of Enrollment', 'Enrolled Date', 'Start Date']);
 
             const missing = [];
             if (idxLRN < 0) missing.push('LRN');
@@ -1897,6 +1983,7 @@
                 const gradeLevel = normalizeText(cols[idxGrade]);
                 const section = normalizeText(cols[idxSection]).toUpperCase();
                 const subject = normalizeText(cols[idxSubject]);
+                const enrollmentDate = idxEnrollment >= 0 ? normalizeEnrollmentDate(cols[idxEnrollment]) : '';
 
                 if (!lrn || !name || !gender || !gradeLevel || !section || !subject) {
                     skippedRows++;
@@ -1926,11 +2013,13 @@
                     if (changed) updatedStudents++;
                 }
 
-                const existsRoster = db.rosters.some(r => r.lrn === lrn && r.gradeLevel === gradeLevel && r.section === section && r.subject === subject);
-                if (!existsRoster) {
-                    db.rosters.push({ lrn, gradeLevel, section, subject });
+                const existingRoster = db.rosters.find(r => r.lrn === lrn && r.gradeLevel === gradeLevel && r.section === section && r.subject === subject);
+                if (!existingRoster) {
+                    db.rosters.push({ lrn, gradeLevel, section, subject, enrollmentDate });
                     addedRosters++;
                 } else {
+                    const mergedDate = pickEnrollmentDate(existingRoster.enrollmentDate, enrollmentDate);
+                    if (mergedDate !== (existingRoster.enrollmentDate || '')) existingRoster.enrollmentDate = mergedDate;
                     duplicateRows++;
                 }
             }
@@ -1956,7 +2045,7 @@
         }
 
         function downloadTemplate() {
-            const csv = 'LRN,Complete Name,Gender,Grade Level,Section,Subject\n"123456789012","DELA CRUZ, JUAN SANTOS","Male","9","JUPITER","Mathematics"\n';
+            const csv = 'LRN,Complete Name,Gender,Grade Level,Section,Subject,Enrollment Date\n"123456789012","DELA CRUZ, JUAN SANTOS","Male","9","JUPITER","Mathematics","2026-06-10"\n';
             downloadBlob(csv, 'Attendance_Roster_Template.csv', 'text/csv;charset=utf-8;');
         }
 
@@ -1968,6 +2057,7 @@
             document.getElementById('newStudentGrade').value = ctx.gradeLevel || '';
             document.getElementById('newStudentSection').value = ctx.section || '';
             document.getElementById('newStudentSubject').value = ctx.subject || '';
+            document.getElementById('newStudentEnrollmentDate').value = ctx.date || getTodayString();
             document.getElementById('addRosterModal').style.display = 'flex';
         }
 
@@ -1982,15 +2072,20 @@
             const gradeLevel = normalizeText(document.getElementById('newStudentGrade').value);
             const section = normalizeText(document.getElementById('newStudentSection').value).toUpperCase();
             const subject = normalizeText(document.getElementById('newStudentSubject').value);
+            const enrollmentDate = normalizeEnrollmentDate(document.getElementById('newStudentEnrollmentDate').value) || getSelectedContext().date || getTodayString();
 
-            if (!lrn || !name || !gradeLevel || !section || !subject) {
-                alert('Please fill in LRN, Complete Name, Grade Level, Section, and Subject.');
+            if (!lrn || !name || !gradeLevel || !section || !subject || !enrollmentDate) {
+                alert('Please fill in LRN, Complete Name, Grade Level, Section, Subject, and Enrollment Date.');
                 return;
             }
 
             db.students[lrn] = { lrn, name, gender, updatedAt: new Date().toISOString() };
-            const existsRoster = db.rosters.some(r => r.lrn === lrn && r.gradeLevel === gradeLevel && r.section === section && r.subject === subject);
-            if (!existsRoster) db.rosters.push({ lrn, gradeLevel, section, subject });
+            const existingRoster = db.rosters.find(r => r.lrn === lrn && r.gradeLevel === gradeLevel && r.section === section && r.subject === subject);
+            if (!existingRoster) {
+                db.rosters.push({ lrn, gradeLevel, section, subject, enrollmentDate });
+            } else {
+                existingRoster.enrollmentDate = enrollmentDate;
+            }
 
             saveDatabase();
             populateDailyFilters({ gradeLevel, section, subject });
@@ -2157,6 +2252,8 @@
         }
 
         function reportStatusFor(date, ctx, lrn) {
+            const roster = getRosterEntryForStudent(ctx, lrn);
+            if (!isRosterEntryEnrolledOn(roster, date)) return NOT_YET_ENROLLED;
             const key = attendanceKey(date, ctx.gradeLevel, ctx.section, ctx.subject, lrn);
             const record = db.attendance[key];
             return record ? record.status : 'Unmarked';
@@ -2164,6 +2261,7 @@
 
         function statusDisplay(status) {
             if (!status || status === 'Unmarked') return '-';
+            if (status === NOT_YET_ENROLLED) return 'NYE';
             return status.charAt(0);
         }
 
@@ -2172,6 +2270,7 @@
             if (status === 'Absent') return 'cell-A';
             if (status === 'Late') return 'cell-L';
             if (status === 'Excused') return 'cell-E';
+            if (status === NOT_YET_ENROLLED) return 'cell-NYE';
             return 'cell-U';
         }
 
@@ -2231,6 +2330,7 @@
             appendCell(headerRow, 'Absent', 'th');
             appendCell(headerRow, 'Late', 'th');
             appendCell(headerRow, 'Excused', 'th');
+            appendCell(headerRow, 'Not Yet Enrolled', 'th');
             thead.appendChild(headerRow);
             table.appendChild(thead);
 
@@ -2238,7 +2338,7 @@
             students.forEach(student => {
                 const row = document.createElement('tr');
                 appendCell(row, student.name, 'td', 'col-name');
-                const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0 };
+                const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0, [NOT_YET_ENROLLED]: 0 };
 
                 targetDates.forEach(date => {
                     const status = reportStatusFor(date, ctx, student.lrn);
@@ -2250,6 +2350,7 @@
                 appendCell(row, counts.Absent, 'td', 'cell-A');
                 appendCell(row, counts.Late, 'td', 'cell-L');
                 appendCell(row, counts.Excused, 'td', 'cell-E');
+                appendCell(row, counts[NOT_YET_ENROLLED], 'td', 'cell-NYE');
                 tbody.appendChild(row);
             });
             table.appendChild(tbody);
@@ -2258,7 +2359,7 @@
         function generateIndividualReport(table, summaryDiv, ctx, lrn, targetDates) {
             const student = db.students[lrn];
             if (!student) return;
-            const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0 };
+            const counts = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0, [NOT_YET_ENROLLED]: 0 };
 
             const thead = document.createElement('thead');
             const headerRow = document.createElement('tr');
@@ -2287,6 +2388,7 @@
                 <div class="summary-item"><span class="summary-label">Absent</span><span style="color: #f44336;">${counts.Absent}</span></div>
                 <div class="summary-item"><span class="summary-label">Late</span><span style="color: #2196f3;">${counts.Late}</span></div>
                 <div class="summary-item"><span class="summary-label">Excused</span><span style="color: #9e9e9e;">${counts.Excused}</span></div>
+                <div class="summary-item"><span class="summary-label">Not Yet Enrolled</span><span style="color: #795548;">${counts[NOT_YET_ENROLLED]}</span></div>
                 <div class="summary-item"><span class="summary-label">Unmarked</span><span style="color: #777;">${counts.Unmarked}</span></div>
             `;
             summaryDiv.style.display = 'flex';
@@ -2378,7 +2480,7 @@
         function getReportSummaryForPrint() {
             const table = document.getElementById('reportTable');
             const isIndividual = document.getElementById('modeIndividual').checked;
-            const result = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0 };
+            const result = { Present: 0, Absent: 0, Late: 0, Excused: 0, Unmarked: 0, [NOT_YET_ENROLLED]: 0 };
 
             if (!table || table.rows.length === 0) return result;
 
@@ -2398,7 +2500,7 @@
                 indexByName[(header.cells[i].innerText || '').trim()] = i;
             }
 
-            ['Present', 'Absent', 'Late', 'Excused', 'Unmarked'].forEach(label => {
+            ['Present', 'Absent', 'Late', 'Excused', 'Not Yet Enrolled', 'Unmarked'].forEach(label => {
                 const idx = indexByName[label];
                 if (idx === undefined) return;
                 for (let rowIndex = 1; rowIndex < table.rows.length; rowIndex++) {
@@ -2413,14 +2515,14 @@
         function getSummaryTableHTMLForPrint(table) {
             const isIndividual = document.getElementById('modeIndividual').checked;
             const summary = getReportSummaryForPrint();
-            const headers = ['Student Name', 'Present', 'Absent', 'Late', 'Excused', 'Unmarked'];
+            const headers = ['Student Name', 'Present', 'Absent', 'Late', 'Excused', 'Not Yet Enrolled', 'Unmarked'];
 
             if (isIndividual) {
                 const lrn = document.getElementById('reportStudentSelect').value;
                 const student = db.students[lrn];
                 return `<table><thead><tr>${headers.map(h => `<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>` +
                     `<tr><td>${escapeHTML(student ? student.name : '')}</td>` +
-                    `<td>${summary.Present}</td><td>${summary.Absent}</td><td>${summary.Late}</td><td>${summary.Excused}</td><td>${summary.Unmarked}</td></tr>` +
+                    `<td>${summary.Present}</td><td>${summary.Absent}</td><td>${summary.Late}</td><td>${summary.Excused}</td><td>${summary[NOT_YET_ENROLLED]}</td><td>${summary.Unmarked}</td></tr>` +
                     `</tbody></table>`;
             }
 
@@ -2433,7 +2535,8 @@
             const absentIndex = headerLabels.indexOf('Absent');
             const lateIndex = headerLabels.indexOf('Late');
             const excusedIndex = headerLabels.indexOf('Excused');
-            const summaryIndices = [presentIndex, absentIndex, lateIndex, excusedIndex].filter(idx => idx >= 0);
+            const nyeIndex = headerLabels.indexOf('Not Yet Enrolled');
+            const summaryIndices = [presentIndex, absentIndex, lateIndex, excusedIndex, nyeIndex].filter(idx => idx >= 0);
             const firstSummaryIndex = summaryIndices.length ? Math.min(...summaryIndices) : headerLabels.length;
 
             let html = `<table><thead><tr>${headers.map(h => `<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>`;
@@ -2445,6 +2548,7 @@
                 const absent = absentIndex >= 0 ? (row.cells[absentIndex]?.innerText || '0') : '0';
                 const late = lateIndex >= 0 ? (row.cells[lateIndex]?.innerText || '0') : '0';
                 const excused = excusedIndex >= 0 ? (row.cells[excusedIndex]?.innerText || '0') : '0';
+                const nye = nyeIndex >= 0 ? (row.cells[nyeIndex]?.innerText || '0') : '0';
                 let unmarked = 0;
 
                 for (let c = studentIndex + 1; c < firstSummaryIndex; c++) {
@@ -2453,7 +2557,7 @@
                 }
 
                 html += `<tr><td>${escapeHTML(name)}</td>` +
-                    `<td>${escapeHTML(present)}</td><td>${escapeHTML(absent)}</td><td>${escapeHTML(late)}</td><td>${escapeHTML(excused)}</td><td>${unmarked}</td></tr>`;
+                    `<td>${escapeHTML(present)}</td><td>${escapeHTML(absent)}</td><td>${escapeHTML(late)}</td><td>${escapeHTML(excused)}</td><td>${escapeHTML(nye)}</td><td>${unmarked}</td></tr>`;
             }
 
             html += '</tbody></table>';
@@ -2542,6 +2646,7 @@
         <span>Absent: ${summary.Absent}</span>
         <span>Late: ${summary.Late}</span>
         <span>Excused: ${summary.Excused}</span>
+                        <span>Not Yet Enrolled: ${summary[NOT_YET_ENROLLED]}</span>
         <span>Unmarked: ${summary.Unmarked}</span>
     </div>
     <div class="print-note">Printed view shows summary only. Use Export CSV for individual date records.</div>
@@ -2576,7 +2681,7 @@
                 alert('No roster data to export.');
                 return;
             }
-            let csv = 'LRN,Complete Name,Gender,Grade Level,Section,Subject\n';
+            let csv = 'LRN,Complete Name,Gender,Grade Level,Section,Subject,Enrollment Date\n';
             const sortedRosters = [...db.rosters].sort((a, b) => {
                 return gradeSortValue(a.gradeLevel) - gradeSortValue(b.gradeLevel)
                     || a.section.localeCompare(b.section)
@@ -2586,7 +2691,7 @@
 
             sortedRosters.forEach(r => {
                 const s = db.students[r.lrn] || { name: '', gender: '' };
-                csv += [r.lrn, s.name, s.gender, r.gradeLevel, r.section, r.subject].map(csvEscape).join(',') + '\n';
+                csv += [r.lrn, s.name, s.gender, r.gradeLevel, r.section, r.subject, r.enrollmentDate || ''].map(csvEscape).join(',') + '\n';
             });
             downloadBlob(csv, 'Attendance_Current_Roster.csv', 'text/csv;charset=utf-8;');
         }
@@ -2905,7 +3010,10 @@
 
             const students = sortStudentObjects(db.rosters
                 .filter(r => sameRosterContext(r, grade, section, subject))
-                .map(r => db.students[r.lrn])
+                .map(r => {
+                    const student = db.students[r.lrn];
+                    return student ? { ...student, enrollmentDate: r.enrollmentDate || '' } : null;
+                })
                 .filter(Boolean));
 
             const thead = document.createElement('thead');
@@ -2914,6 +3022,7 @@
             appendCell(header, 'LRN', 'th');
             appendCell(header, 'Complete Name', 'th');
             appendCell(header, 'Gender', 'th');
+            appendCell(header, 'Enrollment Date', 'th');
             thead.appendChild(header);
             table.appendChild(thead);
 
@@ -2924,6 +3033,7 @@
                 appendCell(row, s.lrn, 'td');
                 appendCell(row, s.name, 'td', 'col-name');
                 appendCell(row, s.gender, 'td');
+                appendCell(row, s.enrollmentDate || 'All dates', 'td');
                 tbody.appendChild(row);
             });
             table.appendChild(tbody);
@@ -2948,7 +3058,7 @@
         });
 
 
-        const APP_VERSION = '2026.06.10-pwa7-summary-print';
+        const APP_VERSION = '2026.06.10-pwa8-late-enrollment';
         let pendingServiceWorker = null;
 
         function showPwaUpdateBanner(message, buttonText, clickHandler) {

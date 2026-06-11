@@ -35,3 +35,9 @@ This app stores attendance records locally on the device using IndexedDB. Cleari
 
 
 Version 7 note: Print Report now prints summary columns only. Full date-by-date records remain available through Export CSV.
+
+
+Version v8 late enrollment patch:
+- Add Roster Entry now includes Enrollment Date.
+- Dates before a learner's enrollment date show Not Yet Enrolled.
+- Roster CSV import/export supports optional Enrollment Date column.
