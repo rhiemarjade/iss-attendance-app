@@ -1440,8 +1440,8 @@
             );
         }
 
-        function refreshAttendanceLockState() {
-            const ctx = getSelectedContext();
+        function refreshAttendanceLockState(contextOverride = null) {
+            const ctx = contextOverride || getSelectedContext();
             const ctxKey = attendanceContextKey(ctx);
             savedRecordExists = hasSavedRecordForContext(ctx);
 
@@ -1452,18 +1452,18 @@
                 attendanceLocked = unlockedRecordContextKey !== ctxKey;
             }
 
-            updateAttendanceLockUI();
+            updateAttendanceLockUI(ctx);
         }
 
-        function updateAttendanceLockUI() {
+        function updateAttendanceLockUI(contextOverride = null) {
             const lockBar = document.getElementById('attendanceLockBar');
             const lockText = document.getElementById('attendanceLockText');
             const tools = document.getElementById('paintbrushTools');
-            const ctx = getSelectedContext();
+            const ctx = contextOverride || getSelectedContext();
 
             if (!lockBar || !tools) return;
 
-            if (attendanceLocked) {
+            if (attendanceLocked && attendanceContextKey(ctx)) {
                 tools.style.display = 'none';
                 lockBar.style.display = 'flex';
                 if (lockText) {
@@ -1598,6 +1598,12 @@
         function onDailyContextChange(level) {
             if (!confirmDiscardIfNeeded()) {
                 applyContextToControls(currentContext);
+                const revertedContext = getSelectedContext();
+                currentContext = { ...revertedContext };
+                draftAttendance = {};
+                unlockedRecordContextKey = '';
+                renderCards(revertedContext);
+                updateRosterSummary(revertedContext);
                 return;
             }
 
@@ -1616,14 +1622,23 @@
             setUnsavedChanges(false);
             draftAttendance = {};
             unlockedRecordContextKey = '';
-            refreshAttendanceLockState();
-            renderCards();
-            updateRosterSummary();
-            currentContext = getSelectedContext();
+
+            const nextContext = getSelectedContext();
+            currentContext = { ...nextContext };
+
+            const grid = document.getElementById('studentGrid');
+            if (grid) {
+                grid.innerHTML = '';
+                grid.dataset.contextKey = attendanceContextKey(nextContext);
+            }
+
+            refreshAttendanceLockState(nextContext);
+            renderCards(nextContext);
+            updateRosterSummary(nextContext);
         }
 
-        function getCurrentRosterStudents() {
-            const ctx = getSelectedContext();
+        function getCurrentRosterStudents(contextOverride = null) {
+            const ctx = contextOverride || getSelectedContext();
             if (!ctx.gradeLevel || !ctx.section || !ctx.subject) return [];
             const rosterByLRN = new Map();
             db.rosters
@@ -1658,11 +1673,14 @@
             return status === NOT_YET_ENROLLED ? 'status-NotYetEnrolled' : `status-${status}`;
         }
 
-        function renderCards() {
+        function renderCards(contextOverride = null) {
             const grid = document.getElementById('studentGrid');
+            const ctx = contextOverride || getSelectedContext();
+            const ctxKey = attendanceContextKey(ctx);
+
             grid.innerHTML = '';
-            const ctx = getSelectedContext();
-            refreshAttendanceLockState();
+            grid.dataset.contextKey = ctxKey;
+            refreshAttendanceLockState(ctx);
 
             if (!ctx.date || !ctx.gradeLevel || !ctx.section || !ctx.subject) {
                 const empty = document.createElement('div');
@@ -1673,7 +1691,7 @@
                 return;
             }
 
-            const rosterStudents = getCurrentRosterStudents();
+            const rosterStudents = getCurrentRosterStudents(ctx);
             if (rosterStudents.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'panel';
@@ -1716,14 +1734,20 @@
                     card.title = 'Saved record is locked. Click Unlock Editing to make changes.';
                 } else {
                     card.onclick = () => {
+                        const activeContext = getSelectedContext();
+                        if (attendanceContextKey(activeContext) !== ctxKey) {
+                            renderCards(activeContext);
+                            updateRosterSummary(activeContext);
+                            return;
+                        }
                         if (!guardLockedAttendanceAction()) return;
                         if (currentMode === 'Edit') {
                             openEditStudentModal(student.lrn);
                         } else {
                             draftAttendance[student.lrn] = currentMode;
                             setUnsavedChanges(true);
-                            renderCards();
-                            updateRosterSummary();
+                            renderCards(ctx);
+                            updateRosterSummary(ctx);
                         }
                     };
                 }
@@ -1732,11 +1756,11 @@
             });
         }
 
-        function updateRosterSummary() {
+        function updateRosterSummary(contextOverride = null) {
             const bar = document.getElementById('rosterSummaryBar');
             const text = document.getElementById('rosterSummaryText');
-            const ctx = getSelectedContext();
-            const students = getCurrentRosterStudents();
+            const ctx = contextOverride || getSelectedContext();
+            const students = getCurrentRosterStudents(ctx);
 
             if (!ctx.gradeLevel || !ctx.section || !ctx.subject) {
                 bar.style.display = 'flex';
@@ -1862,10 +1886,11 @@
             setUnsavedChanges(false);
             draftAttendance = {};
             unlockedRecordContextKey = '';
-            refreshAttendanceLockState();
-            renderCards();
-            updateRosterSummary();
-            currentContext = getSelectedContext();
+            const ctx = getSelectedContext();
+            currentContext = { ...ctx };
+            refreshAttendanceLockState(ctx);
+            renderCards(ctx);
+            updateRosterSummary(ctx);
         }
 
         function parseCSVRows(text) {
@@ -3043,10 +3068,12 @@
             updateAppInfoStats();
             updateDatabaseStats();
             populateDailyFilters(getSelectedContext());
+            const normalizedContext = getSelectedContext();
+            currentContext = { ...normalizedContext };
             prepareReportFilters();
-            refreshAttendanceLockState();
-            renderCards();
-            updateRosterSummary();
+            refreshAttendanceLockState(normalizedContext);
+            renderCards(normalizedContext);
+            updateRosterSummary(normalizedContext);
             updatePreviewFilters('grade');
             updateBackupSafetyUI();
         }
@@ -3058,7 +3085,7 @@
         });
 
 
-        const APP_VERSION = '2026.06.10-pwa8-late-enrollment';
+        const APP_VERSION = '2026.06.10-pwa9-filter-refresh-fix';
         let pendingServiceWorker = null;
 
         function showPwaUpdateBanner(message, buttonText, clickHandler) {

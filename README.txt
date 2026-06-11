@@ -41,3 +41,6 @@ Version v8 late enrollment patch:
 - Add Roster Entry now includes Enrollment Date.
 - Dates before a learner's enrollment date show Not Yet Enrolled.
 - Roster CSV import/export supports optional Enrollment Date column.
+
+
+Version note: v9 filter refresh fix ensures Daily Record names reload correctly whenever Date, Grade, Section, or Subject changes, including locked saved records.

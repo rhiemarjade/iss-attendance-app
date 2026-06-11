@@ -1,4 +1,4 @@
-const CACHE_NAME = 'offline-attendance-pwa-20260610-v8-late-enrollment';
+const CACHE_NAME = 'offline-attendance-pwa-20260610-v9-filter-refresh-fix';
 const APP_SHELL = [
   './',
   './index.html',
